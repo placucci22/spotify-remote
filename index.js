@@ -6,71 +6,110 @@
 \pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
 
 \f0\fs24 \cf0 const express = require('express');\
+const dotenv = require('dotenv');\
 const axios = require('axios');\
 const querystring = require('querystring');\
-require('dotenv').config();\
+\
+dotenv.config();\
 \
 const app = express();\
-const port = process.env.PORT || 3000;\
+const PORT = process.env.PORT || 3000; //\
 \
-// LOGIN\
-app.get('/login', (req, res) => \{\
-  const params = querystring.stringify(\{\
-    response_type: 'code',\
-    client_id: process.env.CLIENT_ID,\
-    scope: 'user-read-playback-state user-modify-playback-state streaming app-remote-control',\
-    redirect_uri: process.env.REDIRECT_URI\
-  \});\
-  res.redirect(`https://accounts.spotify.com/authorize?$\{params\}`);\
+\'d3timo, vou te passar **direto** o que voc\'ea precisa:  \
+**Um `index.js` completo, limpo, funcionando para Railway e Spotify.**\
+\
+Aqui est\'e1:\
+\
+---\
+\
+# \uc0\u55357 \u56540  `index.js` (copia exatamente assim)\
+\
+```javascript\
+const express = require('express');\
+const axios = require('axios');\
+const querystring = require('querystring');\
+const dotenv = require('dotenv');\
+\
+dotenv.config();\
+\
+const app = express();\
+const PORT = process.env.PORT || 3000;\
+\
+const client_id = process.env.CLIENT_ID;\
+const client_secret = process.env.CLIENT_SECRET;\
+const redirect_uri = process.env.REDIRECT_URI;\
+\
+let access_token = '';\
+let refresh_token = '';\
+\
+app.get('/', (req, res) => \{\
+  res.send('Server running!');\
 \});\
 \
-// CALLBACK\
+app.get('/login', (req, res) => \{\
+  const scope = 'user-read-private user-read-email user-modify-playback-state user-read-playback-state streaming app-remote-control playlist-read-private playlist-read-collaborative';\
+\
+  const queryParams = querystring.stringify(\{\
+    response_type: 'code',\
+    client_id: client_id,\
+    scope: scope,\
+    redirect_uri: redirect_uri,\
+  \});\
+\
+  res.redirect(`https://accounts.spotify.com/authorize?$\{queryParams\}`);\
+\});\
+\
 app.get('/callback', async (req, res) => \{\
   const code = req.query.code || null;\
-  const authOptions = \{\
-    method: 'post',\
-    url: 'https://accounts.spotify.com/api/token',\
-    data: querystring.stringify(\{\
-      code: code,\
-      redirect_uri: process.env.REDIRECT_URI,\
-      grant_type: 'authorization_code'\
-    \}),\
-    headers: \{\
-      'Authorization': 'Basic ' + Buffer.from(process.env.CLIENT_ID + ':' + process.env.CLIENT_SECRET).toString('base64'),\
-      'Content-Type': 'application/x-www-form-urlencoded'\
-    \}\
-  \};\
 \
   try \{\
-    const response = await axios(authOptions);\
-    const \{ access_token, refresh_token \} = response.data;\
+    const response = await axios.post('https://accounts.spotify.com/api/token',\
+      querystring.stringify(\{\
+        grant_type: 'authorization_code',\
+        code: code,\
+        redirect_uri: redirect_uri,\
+      \}),\
+      \{\
+        headers: \{\
+          'Authorization': 'Basic ' + Buffer.from(client_id + ':' + client_secret).toString('base64'),\
+          'Content-Type': 'application/x-www-form-urlencoded'\
+        \}\
+      \}\
+    );\
 \
-    global.access_token = access_token;\
-    global.refresh_token = refresh_token;\
+    access_token = response.data.access_token;\
+    refresh_token = response.data.refresh_token;\
 \
-    res.send('Login efetuado com sucesso! Agora pode usar os comandos.');\
+    res.send('Login successful! You can now close this window.');\
   \} catch (error) \{\
-    res.send('Erro ao autenticar: ' + error.message);\
+    console.error('Error getting tokens:', error.response ? error.response.data : error.message);\
+    res.send('Error during authentication.');\
   \}\
 \});\
 \
-// PLAYLIST 1\
-app.get('/play/1', async (req, res) => \{\
-  if (!global.access_token) return res.send('Token inexistente. Fa\'e7a login primeiro.');\
-\
+app.get('/refresh_token', async (req, res) => \{\
   try \{\
-    await axios(\{\
-      method: 'put',\
-      url: 'https://api.spotify.com/v1/me/player/play',\
-      headers: \{ 'Authorization': 'Bearer ' + global.access_token \},\
-      data: \{ context_uri: 'spotify:playlist:37i9dQZF1E3904HjfoXYQz' \}\
-    \});\
-    res.send('Tocando playlist 1.');\
+    const response = await axios.post('https://accounts.spotify.com/api/token',\
+      querystring.stringify(\{\
+        grant_type: 'refresh_token',\
+        refresh_token: refresh_token,\
+      \}),\
+      \{\
+        headers: \{\
+          'Authorization': 'Basic ' + Buffer.from(client_id + ':' + client_secret).toString('base64'),\
+          'Content-Type': 'application/x-www-form-urlencoded'\
+        \}\
+      \}\
+    );\
+\
+    access_token = response.data.access_token;\
+    res.json(\{ access_token: access_token \});\
   \} catch (error) \{\
-    res.send('Erro ao tocar: ' + error.message);\
+    console.error('Error refreshing token:', error.response ? error.response.data : error.message);\
+    res.send('Error refreshing token.');\
   \}\
 \});\
 \
-app.listen(port, () => \{\
-  console.log(`Servidor rodando na porta $\{port\}`);\
+app.listen(PORT, () => \{\
+  console.log(`Server is running on port $\{PORT\}`);\
 \});}
