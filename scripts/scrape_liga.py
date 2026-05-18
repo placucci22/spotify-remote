@@ -46,11 +46,16 @@ KV_TTL   = 90_000  # 25 hours
 def _page_url(base: str, page_num: int) -> str:
     if page_num == 1:
         return base
-    # Insert pagination before any &querystring so we don't break other params
-    if "&" in base:
-        idx = base.index("&")
-        return base[:idx] + f"+pagina%3D{page_num}" + base[idx:]
-    return base + f"+pagina%3D{page_num}"
+    # Pagination must go at the end of the card= value, before any trailing &param
+    # e.g. &card=categ%3D10+searchprod%3D1  →  ...+pagina%3DN
+    # e.g. &card=categ%3D27+searchprod%3D1&tipo=1  →  ...+pagina%3DN&tipo=1
+    card_idx = base.find("card=")
+    if card_idx == -1:
+        return base + f"+pagina%3D{page_num}"
+    next_amp = base.find("&", card_idx)
+    if next_amp == -1:
+        return base + f"+pagina%3D{page_num}"
+    return base[:next_amp] + f"+pagina%3D{page_num}" + base[next_amp:]
 
 
 def _is_challenge(html: str) -> bool:
@@ -174,7 +179,7 @@ async def scrape() -> list[dict]:
 
         for category, base_url in CATEGORY_URLS.items():
             print(f"\n[{category}]")
-            for page_num in range(1, 11):
+            for page_num in range(1, 21):
                 url = _page_url(base_url, page_num)
                 try:
                     await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
