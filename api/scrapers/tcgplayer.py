@@ -20,21 +20,81 @@ HEADERS = {
 
 SEALED_PRODUCT_MAP = {
     "Scarlet & Violet 151 Booster Box": "pokemon-sv3pt5-scarlet-violet-151/booster-box",
+    "Scarlet & Violet 151 ETB": "pokemon-sv3pt5-scarlet-violet-151/elite-trainer-box",
     "Scarlet & Violet Booster Box": "pokemon-sv1-scarlet-violet/booster-box",
     "Paldea Evolved Booster Box": "pokemon-sv2-paldea-evolved/booster-box",
     "Obsidian Flames Booster Box": "pokemon-sv3-obsidian-flames/booster-box",
     "Paradox Rift Booster Box": "pokemon-sv4-paradox-rift/booster-box",
+    "Paradox Rift ETB": "pokemon-sv4-paradox-rift/elite-trainer-box",
     "Temporal Forces Booster Box": "pokemon-sv5-temporal-forces/booster-box",
+    "Temporal Forces ETB": "pokemon-sv5-temporal-forces/elite-trainer-box",
     "Twilight Masquerade Booster Box": "pokemon-sv6-twilight-masquerade/booster-box",
     "Stellar Crown Booster Box": "pokemon-sv7-stellar-crown/booster-box",
+    "Stellar Crown ETB": "pokemon-sv7-stellar-crown/elite-trainer-box",
     "Surging Sparks Booster Box": "pokemon-sv8-surging-sparks/booster-box",
+    "Surging Sparks ETB": "pokemon-sv8-surging-sparks/elite-trainer-box",
     "Prismatic Evolutions ETB": "pokemon-sv8pt5-prismatic-evolutions/elite-trainer-box",
     "Journey Together Booster Box": "pokemon-sv9-journey-together/booster-box",
-    "Scarlet & Violet 151 ETB": "pokemon-sv3pt5-scarlet-violet-151/elite-trainer-box",
-    "Paradox Rift ETB": "pokemon-sv4-paradox-rift/elite-trainer-box",
-    "Temporal Forces ETB": "pokemon-sv5-temporal-forces/elite-trainer-box",
-    "Stellar Crown ETB": "pokemon-sv7-stellar-crown/elite-trainer-box",
+    "Journey Together ETB": "pokemon-sv9-journey-together/elite-trainer-box",
 }
+
+# PT-BR Liga Pokémon name fragments → English equivalents used in SEALED_PRODUCT_MAP.
+# Longer phrases first so they match before shorter substrings.
+_PTBR_FRAGMENTS = [
+    # Set names (numbered first to avoid partial matches with base name)
+    ("escarlate e violeta 9", "journey together"),
+    ("escarlate e violeta 8", "surging sparks"),
+    ("escarlate e violeta 7", "stellar crown"),
+    ("escarlate e violeta 6", "twilight masquerade"),
+    ("escarlate e violeta 5", "temporal forces"),
+    ("escarlate e violeta 4", "paradox rift"),
+    ("escarlate e violeta 3", "obsidian flames"),
+    ("escarlate e violeta 2", "paldea evolved"),
+    ("escarlate e violeta 1", "scarlet & violet"),
+    # Named PT-BR set titles
+    ("amigos de jornada", "journey together"),
+    ("rivais predestinados", "destined rivals"),
+    ("faíscas surpreendentes", "surging sparks"),
+    ("faiscas surpreendentes", "surging sparks"),
+    ("evoluções prismáticas", "prismatic evolutions"),
+    ("evolucoes prismaticas", "prismatic evolutions"),
+    ("coroa estelar", "stellar crown"),
+    ("mascarada do crepúsculo", "twilight masquerade"),
+    ("mascarada do crepusculo", "twilight masquerade"),
+    ("forças temporais", "temporal forces"),
+    ("forcas temporais", "temporal forces"),
+    ("fenda paradoxal", "paradox rift"),
+    ("chamas obsidiana", "obsidian flames"),
+    ("evoluções em paldea", "paldea evolved"),
+    ("evolucoes em paldea", "paldea evolved"),
+    ("escarlate e violeta", "scarlet & violet"),
+    # Product types
+    ("caixa de treinador de elite", "elite trainer box"),
+    ("caixa do treinador de elite", "elite trainer box"),
+    ("caixa de booster", "booster box"),
+]
+
+
+def _normalize_name(name: str) -> Optional[str]:
+    """
+    Convert a Liga Pokémon product name to a normalized English form for TCGPlayer lookup.
+    Returns None for Japanese/Chinese products (not on TCGPlayer).
+    """
+    lang_match = re.match(r"^\s*\(([^)]+)\)\s*", name)
+    if lang_match:
+        lang = lang_match.group(1).upper()
+        if any(x in lang for x in ("JAP", "JP", "CHN", "CN")):
+            return None
+        rest = name[lang_match.end():]
+    else:
+        rest = name
+
+    normalized = rest.lower()
+    for ptbr, en in _PTBR_FRAGMENTS:
+        normalized = normalized.replace(ptbr, en)
+
+    return normalized
+
 
 BASE_URL = "https://www.tcgplayer.com/product"
 
@@ -72,12 +132,10 @@ def get_sealed_price(product_slug: str) -> Optional[float]:
         if price_el:
             return _parse_price(price_el.get_text(strip=True))
 
-        # Fallback: search for $ pattern in page
         text = soup.get_text()
         prices = re.findall(r"\$\s*([\d,]+\.?\d{0,2})", text)
         if prices:
             floats = [float(p.replace(",", "")) for p in prices]
-            # Filter to reasonable sealed product range ($20–$500)
             valid = [p for p in floats if 20 < p < 500]
             if valid:
                 return min(valid)
@@ -87,7 +145,7 @@ def get_sealed_price(product_slug: str) -> Optional[float]:
         return None
 
 
-def get_set_singles_prices(set_slug: str) -> list[dict]:
+def get_set_singles_prices(set_slug: str) -> list:
     """
     Fetch all single card prices for a set from TCGPlayer.
     Returns a list of {name, rarity, market_price_usd}.
@@ -122,27 +180,36 @@ def get_set_singles_prices(set_slug: str) -> list[dict]:
 
 def get_price_for_product_name(product_name: str) -> Optional[float]:
     """
-    Try to find TCGPlayer price using the known product map,
-    or search if not found.
+    Try to find TCGPlayer price for a product, supporting Portuguese Liga Pokémon names.
+    Returns None for JAP/CHN products or unrecognized sets.
     """
-    # Direct match
-    name_lower = product_name.lower()
-    for key, slug in SEALED_PRODUCT_MAP.items():
-        if key.lower() in name_lower or name_lower in key.lower():
-            price = get_sealed_price(slug)
-            if price:
-                return price
-            time.sleep(0.5)
+    normalized = _normalize_name(product_name)
+    if normalized is None:
+        return None  # JAP/CHN — skip
 
-    # Partial match
-    for key, slug in SEALED_PRODUCT_MAP.items():
-        key_words = set(key.lower().split())
-        name_words = set(name_lower.split())
-        overlap = key_words & name_words
-        if len(overlap) >= 3:
-            price = get_sealed_price(slug)
-            if price:
-                return price
-            time.sleep(0.5)
+    # Also try the original name lowercased for English products
+    candidates = [normalized]
+    if normalized != product_name.lower():
+        candidates.append(product_name.lower())
+
+    for name_lower in candidates:
+        # Direct / substring match
+        for key, slug in SEALED_PRODUCT_MAP.items():
+            key_lower = key.lower()
+            if key_lower in name_lower or name_lower in key_lower:
+                price = get_sealed_price(slug)
+                if price:
+                    return price
+                time.sleep(0.3)
+
+        # Partial word overlap (≥2 meaningful words)
+        for key, slug in SEALED_PRODUCT_MAP.items():
+            key_words = set(key.lower().split()) - {"the", "a", "an", "of", "&"}
+            name_words = set(name_lower.split()) - {"the", "a", "an", "of", "&"}
+            if len(key_words & name_words) >= 2:
+                price = get_sealed_price(slug)
+                if price:
+                    return price
+                time.sleep(0.3)
 
     return None

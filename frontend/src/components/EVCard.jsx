@@ -63,14 +63,25 @@ export default function EVCard({ ev }) {
         <div>
           <p className="text-gray-400 text-xs mb-1">Pulls de destaque</p>
           <div className="space-y-1">
-            {ev.notable_pulls.slice(0, 3).map((card, i) => (
-              <div key={i} className="flex justify-between text-xs">
-                <span className="text-gray-300 truncate max-w-[70%]">{card.name}</span>
-                <span className="text-pokemon-yellow font-semibold">
-                  ${card.price_usd?.toFixed(0)}
-                </span>
-              </div>
-            ))}
+            {ev.notable_pulls.slice(0, 5).map((card, i) => {
+              const rate = card.pull_rate;
+              const odds = rate
+                ? rate >= 1
+                  ? `~${rate.toFixed(1)}×/caixa`
+                  : `1 em ${Math.round(1 / rate)} cx`
+                : null;
+              return (
+                <div key={i} className="flex justify-between items-center text-xs gap-1">
+                  <span className="text-gray-300 truncate">{card.name}</span>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {odds && <span className="text-gray-500">{odds}</span>}
+                    <span className="text-pokemon-yellow font-semibold">
+                      ${card.price_usd?.toFixed(0)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -303,18 +303,26 @@ def dashboard():
     products = _products_cache
     sealed = [p for p in products if p.get("category") in {"booster_box", "etb", "sealed"}]
 
-    best_deals = []
-    for p in sealed[:15]:
+    # Build comparison for all sealed products (skip JAP/CHN which return None)
+    all_comparisons = []
+    for p in sealed[:60]:
         tcg_usd = get_price_for_product_name(p["name"])
+        entry = {**p, "tcgplayer_usd": tcg_usd, "tcgplayer_brl": None, "savings_pct": None}
         if tcg_usd:
             tcg_brl = usd_to_brl_direct(tcg_usd, rate)
             savings = ((tcg_brl - p["price_brl"]) / tcg_brl) * 100
-            best_deals.append({**p, "savings_pct": round(savings, 1), "tcgplayer_usd": tcg_usd, "tcgplayer_brl": round(tcg_brl, 2)})
+            entry["tcgplayer_brl"] = round(tcg_brl, 2)
+            entry["savings_pct"] = round(savings, 1)
+        all_comparisons.append(entry)
 
-    best_deals.sort(key=lambda x: x.get("savings_pct", -999), reverse=True)
+    best_deals = sorted(
+        [c for c in all_comparisons if c["savings_pct"] is not None],
+        key=lambda x: x["savings_pct"],
+        reverse=True,
+    )
 
     ev_list = []
-    for p in sealed[:15]:
+    for p in sealed[:40]:
         ev = calculate_ev(p["name"], p["price_brl"])
         ev_list.append({**p, **ev})
     ev_list.sort(key=lambda x: x.get("expected_profit_loss_pct", -999), reverse=True)
@@ -323,8 +331,9 @@ def dashboard():
         "exchange_rate": rate,
         "total_products": len(products),
         "total_sealed": len(sealed),
-        "best_deals": best_deals[:5],
-        "best_ev_boxes": ev_list[:5],
+        "best_deals": best_deals[:10],
+        "all_comparisons": all_comparisons,
+        "best_ev_boxes": ev_list[:10],
         "last_updated": _last_scrape or datetime.now().isoformat(),
     }
 
