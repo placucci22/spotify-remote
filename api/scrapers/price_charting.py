@@ -70,7 +70,7 @@ def get_sealed_price_and_trend(product_name: str) -> dict:
         if resp.status_code != 200:
             return {"sealed_usd": None, "used_usd": None, "thirty_day_change_pct": None, "trend": "UNKNOWN"}
 
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "html.parser")
         return _parse_price_page(soup)
     except Exception as e:
         print(f"[pricecharting] Error fetching {url}: {e}")
@@ -100,7 +100,7 @@ def _search_pricecharting(query: str) -> Optional[str]:
         resp = requests.get(url, headers=HEADERS, timeout=10)
         if resp.status_code != 200:
             return None
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "html.parser")
         result = soup.select_one(".search-result a") or soup.select_one("table.games a")
         if result:
             href = result.get("href", "")
@@ -168,7 +168,7 @@ def get_historical_prices(product_slug: str, days: int = 90) -> list[dict]:
         resp = requests.get(url, headers=HEADERS, timeout=15)
         if resp.status_code != 200:
             return []
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "html.parser")
         # Parse chart data embedded in page JS
         text = resp.text
         match = re.search(r"chartData\s*=\s*(\[.+?\]);", text, re.DOTALL)

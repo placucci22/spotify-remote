@@ -61,7 +61,7 @@ def get_sealed_price(product_slug: str) -> Optional[float]:
         resp = requests.get(url, headers=HEADERS, timeout=15)
         if resp.status_code != 200:
             return None
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "html.parser")
 
         price_el = (
             soup.select_one(".spotlight__price")
@@ -98,7 +98,7 @@ def get_set_singles_prices(set_slug: str) -> list[dict]:
         resp = requests.get(url, headers=HEADERS, timeout=20)
         if resp.status_code != 200:
             return []
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "html.parser")
         card_items = soup.select(".search-result") or soup.select("[class*='product-card']")
 
         for item in card_items:

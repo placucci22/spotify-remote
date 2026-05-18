@@ -101,7 +101,7 @@ def scrape_products(max_pages: int = 5) -> list[dict]:
                 resp = requests.get(url, headers=HEADERS, timeout=15)
                 if resp.status_code != 200:
                     break
-                soup = BeautifulSoup(resp.text, "lxml")
+                soup = BeautifulSoup(resp.text, "html.parser")
                 items = _parse_product_list(soup, category)
                 if not items:
                     break
@@ -199,7 +199,7 @@ def _scrape_search_fallback() -> list[dict]:
         try:
             resp = requests.get(url, headers=HEADERS, timeout=15)
             if resp.status_code == 200:
-                soup = BeautifulSoup(resp.text, "lxml")
+                soup = BeautifulSoup(resp.text, "html.parser")
                 items = _parse_product_list(soup, "sealed")
                 products.extend(items)
             time.sleep(1.5)
@@ -215,7 +215,7 @@ def scrape_product_detail(url: str) -> Optional[dict]:
         resp = requests.get(url, headers=HEADERS, timeout=15)
         if resp.status_code != 200:
             return None
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "html.parser")
         desc_el = soup.select_one(".descricao") or soup.select_one(".description")
         desc = desc_el.get_text(strip=True) if desc_el else ""
         return {"description": desc}
