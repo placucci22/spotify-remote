@@ -1,5 +1,6 @@
 """
-Playwright scraper for ligapokemon.com.br — runs on Render.com cron.
+Playwright scraper for ligapokemon.com.br.
+Runs locally (Mac/Linux) or on Render.com cron.
 Stores results in Upstash Redis so the Vercel API can read them.
 """
 import asyncio
@@ -9,11 +10,18 @@ import os
 import re
 import sys
 from datetime import datetime
+from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
+
+# Load .env file if present (for local runs)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass
 
 BASE_URL = "https://www.ligapokemon.com.br"
 
@@ -28,19 +36,9 @@ CATEGORY_URLS = {
 KV_URL   = os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ["KV_REST_API_URL"]
 KV_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ["KV_REST_API_TOKEN"]
 KV_KEY   = "liga_products_v1"
-KV_TTL   = 90_000
+KV_TTL   = 90_000  # 25 hours
 
 _debug_done = False
-
-CHROMIUM_ARGS = [
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--disable-extensions",
-    "--disable-background-networking",
-    "--disable-default-apps",
-    "--mute-audio",
-]
 
 
 def _page_url(base: str, page_num: int) -> str:
@@ -79,15 +77,15 @@ def _extract_set_name(name: str) -> str:
     return " ".join(filtered[:4]) if filtered else name
 
 
-def _debug_html(html: str, label: str = ""):
+def _debug_html(html: str):
     global _debug_done
     if _debug_done:
         return
     _debug_done = True
     soup = BeautifulSoup(html, "html.parser")
     title = soup.title.string if soup.title else "NO TITLE"
-    print(f"[DEBUG{' ' + label if label else ''}] title: {title}")
-    all_classes = set()
+    print(f"[DEBUG] title: {title}")
+    all_classes: set[str] = set()
     for el in soup.find_all(True):
         for cls in (el.get("class") or []):
             all_classes.add(cls)
@@ -96,11 +94,16 @@ def _debug_html(html: str, label: str = ""):
     ))
     print(f"[DEBUG] classes: {interesting[:50]}")
     body = soup.find("body")
-    print(f"[DEBUG] html[:2000]:\n{str(body)[:2000]}")
+    print(f"[DEBUG] html[:3000]:\n{str(body)[:3000]}")
 
 
-def _is_challenge_page(html: str) -> bool:
-    return "cf-turnstile" in html or "verificação de segurança" in html.lower() or "just a moment" in html.lower()
+def _is_challenge(html: str) -> bool:
+    return (
+        "cf-turnstile" in html
+        or "verificação de segurança" in html.lower()
+        or "just a moment" in html.lower()
+        or "enable javascript" in html.lower()
+    )
 
 
 def _parse_page(html: str, category: str) -> list[dict]:
@@ -218,30 +221,17 @@ def _parse_page(html: str, category: str) -> list[dict]:
     return products
 
 
-async def _load_page(page, url: str) -> str:
-    """Navigate and wait for challenge to resolve or content to load."""
-    await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-    # If Cloudflare challenge detected, wait up to 20s for it to auto-resolve
-    for _ in range(4):
-        await page.wait_for_timeout(5000)
-        html = await page.content()
-        if not _is_challenge_page(html):
-            return html
-        print("  [cf] challenge detected, waiting...")
-    return await page.content()
-
-
 async def scrape() -> list[dict]:
     all_products: dict[str, dict] = {}
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
             headless=True,
-            args=CHROMIUM_ARGS,
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
         context = await browser.new_context(
             user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
@@ -249,17 +239,18 @@ async def scrape() -> list[dict]:
             viewport={"width": 1280, "height": 800},
         )
         page = await context.new_page()
-        await stealth_async(page)  # patch navigator.webdriver & fingerprints
 
         for category, base_url in CATEGORY_URLS.items():
             print(f"\n[{category}]")
             for page_num in range(1, 11):
                 url = _page_url(base_url, page_num)
                 try:
-                    html = await _load_page(page, url)
+                    await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                    await page.wait_for_timeout(3000)
+                    html = await page.content()
 
-                    if _is_challenge_page(html):
-                        print(f"  page {page_num}: still on challenge after 20s — stopping category")
+                    if _is_challenge(html):
+                        print(f"  page {page_num}: Cloudflare challenge (IP bloqueado neste ambiente)")
                         break
 
                     items = _parse_page(html, category)
@@ -275,7 +266,7 @@ async def scrape() -> list[dict]:
                             new += 1
 
                     print(f"  page {page_num}: {len(items)} items ({new} new)")
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(1.5)
 
                 except Exception as e:
                     print(f"  page {page_num}: error — {e}")
@@ -312,7 +303,6 @@ async def main():
     scraped_at = datetime.utcnow().isoformat()
     ok = save_to_kv(products, scraped_at)
     print(f"KV save: {'OK' if ok else 'FAILED'}")
-
     if not ok:
         sys.exit(1)
 
