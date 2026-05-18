@@ -25,8 +25,8 @@ CATEGORY_URLS = {
     "collection":  f"{BASE_URL}/?view=cards/list&CategoriasId=6",
 }
 
-KV_URL   = os.environ["UPSTASH_REDIS_REST_URL"]
-KV_TOKEN = os.environ["UPSTASH_REDIS_REST_TOKEN"]
+KV_URL   = os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ["KV_REST_API_URL"]
+KV_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ["KV_REST_API_TOKEN"]
 KV_KEY   = "liga_products_v1"
 KV_TTL   = 90_000  # 25 hours
 
