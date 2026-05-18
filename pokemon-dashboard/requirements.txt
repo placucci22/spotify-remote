@@ -1,6 +1,5 @@
 fastapi==0.104.1
 requests==2.31.0
-cloudscraper==1.2.71
 beautifulsoup4==4.12.2
 python-dotenv==1.0.0
 mangum==0.17.0
