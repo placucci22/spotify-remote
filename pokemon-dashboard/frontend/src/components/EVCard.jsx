@@ -1,5 +1,14 @@
 import RecommendationBadge from "./RecommendationBadge";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+
+const RARITY_SHORT = {
+  "Special Illustration Rare": "SAR",
+  "Hyper Rare": "HR",
+  "Illustration Rare": "IR",
+  "Ultra Rare": "UR",
+  "Double Rare": "DR",
+  "Rare Holo": "RH",
+  "Rare": "R",
+};
 
 function ProfitBar({ pct }) {
   const clamped = Math.max(-100, Math.min(100, pct));
@@ -15,17 +24,19 @@ function ProfitBar({ pct }) {
   );
 }
 
-export default function EVCard({ ev }) {
+function formatOdds(pullRate) {
+  if (!pullRate) return null;
+  if (pullRate >= 1) return `~${pullRate.toFixed(1)}×/cx`;
+  return `1 em ${Math.round(1 / pullRate)} cx`;
+}
+
+export default function EVCard({ ev, exchangeRate }) {
   const isPositive = ev.expected_profit_loss_brl >= 0;
-  const TrendIcon =
-    ev.sealed_trend === "INCREASING"
-      ? TrendingUp
-      : ev.sealed_trend === "DECREASING"
-      ? TrendingDown
-      : Minus;
+  const boxPrice = ev.price_brl ?? ev.box_price_brl;
 
   return (
     <div className="card flex flex-col gap-3">
+      {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>
           <h3 className="font-semibold text-white text-sm leading-tight">
@@ -38,10 +49,11 @@ export default function EVCard({ ev }) {
         <RecommendationBadge value={ev.recommendation} />
       </div>
 
+      {/* Box price + EV */}
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
           <p className="text-gray-400 text-xs">Preço da caixa</p>
-          <p className="font-bold text-white">R$ {ev.price_brl?.toFixed(0) ?? ev.box_price_brl?.toFixed(0)}</p>
+          <p className="font-bold text-white">R$ {boxPrice?.toFixed(0)}</p>
         </div>
         <div>
           <p className="text-gray-400 text-xs">EV estimado</p>
@@ -49,6 +61,7 @@ export default function EVCard({ ev }) {
         </div>
       </div>
 
+      {/* Profit bar */}
       <div>
         <div className="flex justify-between text-xs mb-1">
           <span className="text-gray-400">Lucro/Prejuízo esperado</span>
@@ -59,18 +72,39 @@ export default function EVCard({ ev }) {
         <ProfitBar pct={ev.expected_profit_loss_pct} />
       </div>
 
+      {/* Notable pulls with odds */}
       {ev.notable_pulls?.length > 0 && (
         <div>
-          <p className="text-gray-400 text-xs mb-1">Pulls de destaque</p>
-          <div className="space-y-1">
-            {ev.notable_pulls.slice(0, 3).map((card, i) => (
-              <div key={i} className="flex justify-between text-xs">
-                <span className="text-gray-300 truncate max-w-[70%]">{card.name}</span>
-                <span className="text-pokemon-yellow font-semibold">
-                  ${card.price_usd?.toFixed(0)}
-                </span>
-              </div>
-            ))}
+          <p className="text-gray-400 text-xs font-medium mb-1.5">Pulls de destaque</p>
+          <div className="space-y-1.5">
+            {ev.notable_pulls.map((card, i) => {
+              const priceBrl = exchangeRate && card.price_usd
+                ? `R$ ${(card.price_usd * exchangeRate).toFixed(0)}`
+                : null;
+              const odds = formatOdds(card.pull_rate);
+              const rarityShort = RARITY_SHORT[card.rarity] ?? card.rarity;
+              return (
+                <div key={i} className="bg-pokemon-bg rounded-lg px-2.5 py-1.5">
+                  <div className="flex items-start justify-between gap-1">
+                    <span className="text-gray-200 text-xs font-medium leading-snug flex-1 min-w-0">
+                      {card.name}
+                    </span>
+                    <span className="text-pokemon-yellow text-xs font-bold flex-shrink-0 ml-1">
+                      ${card.price_usd?.toFixed(0)}
+                      {priceBrl && <span className="text-gray-400 font-normal"> · {priceBrl}</span>}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {rarityShort && (
+                      <span className="text-[10px] text-purple-400 font-semibold">{rarityShort}</span>
+                    )}
+                    {odds && (
+                      <span className="text-[10px] text-blue-400">{odds}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

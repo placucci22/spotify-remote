@@ -110,7 +110,7 @@ export default function Dashboard() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {data.best_ev_boxes.map((ev, i) => (
-              <EVCard key={ev.product_id ?? i} ev={ev} />
+              <EVCard key={ev.product_id ?? i} ev={ev} exchangeRate={data.exchange_rate} />
             ))}
           </div>
         </section>
