@@ -1,0 +1,5 @@
+FROM mcr.microsoft.com/playwright/python:v1.52.0-jammy
+WORKDIR /app
+COPY scripts/scrape_liga.py scrape_liga.py
+RUN pip install --quiet requests beautifulsoup4
+CMD ["python", "scrape_liga.py"]
