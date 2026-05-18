@@ -45,14 +45,14 @@ function CompMobileCard({ c }) {
           <p className="font-bold text-gray-200">{c.tcgplayer_usd ? `$${c.tcgplayer_usd?.toFixed(0)}` : "—"}</p>
         </div>
         <div>
-          <p className="text-gray-400">Economia</p>
+          <p className="text-gray-400">Diferença</p>
           <p className={`font-bold ${savingsColor}`}>
             {c.savings_pct != null ? `${c.savings_pct > 0 ? "+" : ""}${c.savings_pct?.toFixed(1)}%` : "—"}
           </p>
         </div>
       </div>
-      {c.import_cost_brl && (
-        <p className="text-xs text-gray-500">Custo importar (c/ 60% imposto): R$ {c.import_cost_brl?.toFixed(0)}</p>
+      {c.tcgplayer_brl && (
+        <p className="text-xs text-gray-500">TCGPlayer em BRL: R$ {c.tcgplayer_brl?.toFixed(0)}</p>
       )}
     </div>
   );
@@ -85,7 +85,7 @@ export default function Comparison() {
       <div>
         <h1 className="text-xl md:text-2xl font-bold text-white">Brasil vs EUA</h1>
         <p className="text-gray-400 text-xs md:text-sm">
-          Preços do Liga vs TCGPlayer com imposto de importação (~60%)
+          Preços do Liga vs TCGPlayer convertido pelo câmbio atual
         </p>
       </div>
 
@@ -94,7 +94,7 @@ export default function Comparison() {
           <DollarSign size={18} className="text-green-400 flex-shrink-0" />
           <div className="text-sm">
             <p className="font-semibold text-green-300">Câmbio: R$ {rate?.toFixed(2)} / USD</p>
-            <p className="text-xs text-gray-400">Importar = USD × {rate?.toFixed(2)} × 1.60</p>
+            <p className="text-xs text-gray-400">Equivalente em BRL = USD × {rate?.toFixed(2)}</p>
           </div>
         </div>
       )}
@@ -102,8 +102,7 @@ export default function Comparison() {
       <div className="card bg-blue-950/40 border-blue-800 flex gap-2 text-xs md:text-sm">
         <Info size={14} className="text-blue-400 flex-shrink-0 mt-0.5" />
         <p className="text-gray-300">
-          <span className="text-blue-300 font-semibold">Economia positiva</span> = comprar no BR é mais barato
-          que importar do EUA (incluindo imposto de 60%).
+          <span className="text-blue-300 font-semibold">Diferença positiva</span> = preço no BR é menor que no TCGPlayer (câmbio direto).
         </p>
       </div>
 
@@ -134,7 +133,7 @@ export default function Comparison() {
           {chartData.length > 0 && (
             <div className="card">
               <h2 className="text-xs md:text-sm font-semibold text-gray-300 mb-3">
-                Economia vs importar (%) — verde = mais barato no BR
+                Diferença de preço BR vs EUA (%) — verde = mais barato no BR
               </h2>
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={chartData} margin={{ top: 0, right: 0, bottom: 30, left: 0 }}>
@@ -168,8 +167,8 @@ export default function Comparison() {
                   <th className="text-left px-4 py-3">Produto</th>
                   <th className="text-right px-4 py-3">Liga BR</th>
                   <th className="text-right px-4 py-3">TCGPlayer USD</th>
-                  <th className="text-right px-4 py-3">Custo importar</th>
-                  <th className="text-right px-4 py-3">Economia</th>
+                  <th className="text-right px-4 py-3">TCGPlayer em BRL</th>
+                  <th className="text-right px-4 py-3">Diferença</th>
                   <th className="text-center px-4 py-3">Avaliação</th>
                 </tr>
               </thead>
@@ -181,8 +180,8 @@ export default function Comparison() {
                     <td className="px-4 py-3 text-right text-gray-300">
                       {c.tcgplayer_usd ? `$ ${c.tcgplayer_usd?.toFixed(0)}` : <span className="text-gray-600">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-400 text-xs">
-                      {c.import_cost_brl ? `R$ ${c.import_cost_brl?.toFixed(0)}` : "—"}
+                    <td className="px-4 py-3 text-right text-gray-400">
+                      {c.tcgplayer_brl ? `R$ ${c.tcgplayer_brl?.toFixed(0)}` : <span className="text-gray-600">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {c.savings_pct != null ? (
