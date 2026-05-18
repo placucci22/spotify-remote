@@ -16,11 +16,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from mangum import Mangum
 
-from scrapers.liga_pokemon import scrape_products
+from scrapers.liga_pokemon import scrape_products, scrape_all_categories
 from scrapers.tcgplayer import get_price_for_product_name
 from scrapers.price_charting import get_sealed_price_and_trend
 from services.exchange_rate import get_usd_brl, usd_to_brl_direct
 from services.ev_calculator import calculate_ev, STATIC_EV_DATA
+from services.kv_store import kv_get_products, kv_set_products
 
 # ──────────────────────────────────────────────
 # App + Security middleware
@@ -112,11 +113,25 @@ def _get_demo_products() -> list[dict]:
 
 
 # ──────────────────────────────────────────────
-# In-memory cache (fresh on each cold start)
+# In-memory cache — loaded from KV on first request
 # ──────────────────────────────────────────────
 
 _products_cache: list[dict] = _get_demo_products()
 _last_scrape: Optional[str] = None
+_kv_loaded: bool = False
+
+
+def _ensure_kv_loaded():
+    """Load products from KV once per container lifetime."""
+    global _products_cache, _last_scrape, _kv_loaded
+    if _kv_loaded:
+        return
+    _kv_loaded = True
+    data = kv_get_products()
+    if data and data.get("products"):
+        _products_cache = data["products"]
+        _last_scrape = data.get("scraped_at")
+        print(f"[cache] Loaded {len(_products_cache)} products from KV")
 
 
 # ──────────────────────────────────────────────
@@ -137,6 +152,7 @@ def get_products(
     max_price: Optional[float] = Query(None, ge=0, le=1_000_000),
     search: Optional[str] = Query(None, max_length=120),
 ):
+    _ensure_kv_loaded()
     category = _validate_category(category)
     search = _sanitize(search)
 
@@ -206,6 +222,7 @@ def compare_products(
     limit: int = Query(20, ge=1, le=100),
     category: Optional[str] = Query(None, max_length=32),
 ):
+    _ensure_kv_loaded()
     category = _validate_category(category)
     rate = get_usd_brl()
     products = _products_cache
@@ -242,6 +259,7 @@ def ev_analysis(
     category: Optional[str] = Query(None, max_length=32),
     limit: int = Query(20, ge=1, le=50),
 ):
+    _ensure_kv_loaded()
     category = _validate_category(category)
     products = _products_cache
     if category:
@@ -280,6 +298,7 @@ def ev_known_sets():
 
 @app.get("/api/dashboard")
 def dashboard():
+    _ensure_kv_loaded()
     rate = get_usd_brl()
     products = _products_cache
     sealed = [p for p in products if p.get("category") in {"booster_box", "etb", "sealed"}]
@@ -316,6 +335,43 @@ def product_trend(product_name: str):
     if not name:
         raise HTTPException(status_code=400, detail="Nome inválido")
     return get_sealed_price_and_trend(name)
+
+
+@app.get("/api/cron/scrape")
+def cron_scrape(request: Request):
+    """
+    Daily cron endpoint — triggered by Vercel at 06:00 BRT.
+    Validates the CRON_SECRET Vercel injects automatically.
+    """
+    cron_secret = os.getenv("CRON_SECRET", "")
+    if cron_secret:
+        auth = request.headers.get("authorization", "")
+        if auth != f"Bearer {cron_secret}":
+            raise HTTPException(status_code=401)
+
+    global _products_cache, _last_scrape, _kv_loaded
+
+    try:
+        products = scrape_all_categories(max_pages=6, max_workers=8, request_timeout=8)
+        if not products:
+            return {"ok": False, "message": "Scraping retornou 0 produtos"}
+
+        scraped_at = datetime.now().isoformat()
+        saved = kv_set_products(products, scraped_at)
+
+        _products_cache = products
+        _last_scrape = scraped_at
+        _kv_loaded = True
+
+        return {
+            "ok": True,
+            "total": len(products),
+            "scraped_at": scraped_at,
+            "kv_saved": saved,
+        }
+    except Exception as e:
+        print(f"[cron] Error: {e}")
+        return {"ok": False, "message": "Erro durante scraping", "detail": str(e)}
 
 
 # ──────────────────────────────────────────────

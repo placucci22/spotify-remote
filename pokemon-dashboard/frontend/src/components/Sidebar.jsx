@@ -4,7 +4,6 @@ import {
   Package,
   Calculator,
   ArrowLeftRight,
-  Briefcase,
   Zap,
 } from "lucide-react";
 
@@ -13,7 +12,6 @@ export const NAV_LINKS = [
   { to: "/products", icon: Package, label: "Produtos" },
   { to: "/ev", icon: Calculator, label: "EV Caixas" },
   { to: "/compare", icon: ArrowLeftRight, label: "BR vs EUA" },
-  { to: "/portfolio", icon: Briefcase, label: "Portfolio" },
 ];
 
 export default function Sidebar() {

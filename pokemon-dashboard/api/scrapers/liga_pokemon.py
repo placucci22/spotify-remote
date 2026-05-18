@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 import hashlib
 import time
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Optional
 
@@ -86,11 +87,8 @@ def _extract_set_name(name: str) -> str:
     return " ".join(filtered[:4]) if filtered else name
 
 
-def scrape_products(max_pages: int = 5) -> list[dict]:
-    """
-    Scrape Liga Pokémon for sealed products.
-    Returns a list of product dicts.
-    """
+def scrape_products(max_pages: int = 3) -> list[dict]:
+    """Quick sequential scrape — used for on-demand refresh (2-3 pages per category)."""
     products = []
     seen_ids = set()
 
@@ -98,7 +96,7 @@ def scrape_products(max_pages: int = 5) -> list[dict]:
         for page in range(1, max_pages + 1):
             url = f"{base_url}&pagina={page}"
             try:
-                resp = requests.get(url, headers=HEADERS, timeout=15)
+                resp = requests.get(url, headers=HEADERS, timeout=10)
                 if resp.status_code != 200:
                     break
                 soup = BeautifulSoup(resp.text, "html.parser")
@@ -109,7 +107,7 @@ def scrape_products(max_pages: int = 5) -> list[dict]:
                     if item["id"] not in seen_ids:
                         seen_ids.add(item["id"])
                         products.append(item)
-                time.sleep(1.0)
+                time.sleep(0.3)
             except Exception as e:
                 print(f"[liga_pokemon] Error scraping {url}: {e}")
                 break
@@ -117,6 +115,47 @@ def scrape_products(max_pages: int = 5) -> list[dict]:
     if not products:
         products = _scrape_search_fallback()
 
+    return products
+
+
+def scrape_all_categories(max_pages: int = 6, max_workers: int = 8, request_timeout: int = 8) -> list[dict]:
+    """
+    Full parallel scrape of all categories — used by the daily cron job.
+    Fetches all category × page combinations concurrently.
+    """
+    tasks = [
+        (category, page, f"{base_url}&pagina={page}")
+        for category, base_url in CATEGORY_URLS.items()
+        for page in range(1, max_pages + 1)
+    ]
+
+    def fetch_page(task):
+        category, page, url = task
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=request_timeout)
+            if resp.status_code != 200:
+                return []
+            soup = BeautifulSoup(resp.text, "html.parser")
+            return _parse_product_list(soup, category)
+        except Exception as e:
+            print(f"[liga_pokemon] Error {url}: {e}")
+            return []
+
+    products = []
+    seen_ids = set()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fetch_page, task): task for task in tasks}
+        for future in as_completed(futures, timeout=25):
+            try:
+                for item in future.result():
+                    if item["id"] not in seen_ids:
+                        seen_ids.add(item["id"])
+                        products.append(item)
+            except Exception:
+                pass
+
+    print(f"[liga_pokemon] Full scrape complete: {len(products)} products")
     return products
 
 
