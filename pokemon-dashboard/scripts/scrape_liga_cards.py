@@ -206,7 +206,7 @@ def _parse_card_page(html: str, set_abbrev: str) -> list[dict]:
     return cards
 
 
-async def scrape_set(page, abbrev: str, min_price: float = 0) -> list[dict]:
+async def scrape_set(page, abbrev: str, min_price: float = 0, debug: bool = False) -> list[dict]:
     """Scrape all cards for one set abbreviation."""
     url = CARD_SEARCH_URL.format(abbrev=abbrev)
     print(f"[{abbrev}] Fetching {url}")
@@ -219,6 +219,13 @@ async def scrape_set(page, abbrev: str, min_price: float = 0) -> list[dict]:
         # Click through pagination / load-more buttons
         for page_num in range(1, 20):
             html = await page.content()
+
+            if debug and page_num == 1:
+                debug_file = f"debug_{abbrev}.html"
+                with open(debug_file, "w", encoding="utf-8") as f:
+                    f.write(html)
+                print(f"[{abbrev}] HTML salvo em {debug_file} ({len(html)} bytes)")
+
             batch = _parse_card_page(html, abbrev)
             if not batch and page_num == 1:
                 print(f"[{abbrev}] No cards found — check selectors or set abbreviation")
@@ -267,7 +274,7 @@ def kv_save(cards: list[dict], scraped_at: str) -> None:
         print(f"[kv] Save failed: {r.status_code} {r.text}")
 
 
-async def main(sets: list[str], min_price: float) -> None:
+async def main(sets: list[str], min_price: float, debug: bool = False) -> None:
     all_cards: list[dict] = []
     seen_ids: set[str] = set()
 
@@ -277,7 +284,7 @@ async def main(sets: list[str], min_price: float) -> None:
         await page.set_extra_http_headers({"Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8"})
 
         for abbrev in sets:
-            cards = await scrape_set(page, abbrev, min_price)
+            cards = await scrape_set(page, abbrev, min_price, debug=debug)
             for card in cards:
                 if card["id"] not in seen_ids:
                     seen_ids.add(card["id"])
@@ -299,6 +306,8 @@ if __name__ == "__main__":
                         help="Set abbreviations to scrape (default: all known English sets)")
     parser.add_argument("--min-price", type=float, default=0,
                         help="Minimum price in BRL to include (default: 0 = all)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Save raw HTML to debug_<ABBREV>.html for selector inspection")
     args = parser.parse_args()
 
-    asyncio.run(main(args.sets, args.min_price))
+    asyncio.run(main(args.sets, args.min_price, debug=args.debug))
