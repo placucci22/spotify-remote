@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from mangum import Mangum
 
 from scrapers.liga_pokemon import scrape_products, scrape_all_categories
+from scrapers.mercadolivre import fetch_ml_products
 from scrapers.tcgplayer import get_price_for_product_name
 from scrapers.price_charting import get_sealed_price_and_trend
 from services.exchange_rate import get_usd_brl, usd_to_brl_direct
@@ -352,16 +353,10 @@ def cron_scrape(request: Request):
     global _products_cache, _last_scrape, _kv_loaded
 
     try:
-        products = scrape_all_categories(max_pages=6, max_workers=8, request_timeout=8)
+        # Primary source: Mercado Livre public API (no bot protection)
+        products = fetch_ml_products(limit_per_query=50)
         if not products:
-            # Try a quick single-page test to get a diagnostic status code
-            try:
-                import cloudscraper as _cs
-                _s = _cs.create_scraper()
-                _r = _s.get("https://www.ligapokemon.com.br/?view=cards/list&CategoriasId=2&pagina=1", timeout=10)
-                return {"ok": False, "message": "Scraping retornou 0 produtos", "http_status": _r.status_code, "html_snippet": _r.text[:300]}
-            except Exception as probe_err:
-                return {"ok": False, "message": "Scraping retornou 0 produtos", "probe_error": str(probe_err)}
+            return {"ok": False, "message": "Mercado Livre API retornou 0 produtos"}
 
         scraped_at = datetime.now().isoformat()
         saved = kv_set_products(products, scraped_at)
