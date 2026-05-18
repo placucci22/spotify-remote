@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 WORKDIR /app
 COPY scripts/scrape_liga.py scrape_liga.py
-RUN pip install requests beautifulsoup4 playwright && \
+RUN pip install requests beautifulsoup4 playwright playwright-stealth && \
     playwright install chromium --with-deps
 CMD ["python", "scrape_liga.py"]

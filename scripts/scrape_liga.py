@@ -13,6 +13,7 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
 
 BASE_URL = "https://www.ligapokemon.com.br"
 
@@ -31,7 +32,6 @@ KV_TTL   = 90_000
 
 _debug_done = False
 
-# Safe flags for Playwright in Docker — no --single-process (breaks IPC)
 CHROMIUM_ARGS = [
     "--no-sandbox",
     "--disable-dev-shm-usage",
@@ -79,14 +79,14 @@ def _extract_set_name(name: str) -> str:
     return " ".join(filtered[:4]) if filtered else name
 
 
-def _debug_html(html: str, url: str):
+def _debug_html(html: str, label: str = ""):
     global _debug_done
     if _debug_done:
         return
     _debug_done = True
     soup = BeautifulSoup(html, "html.parser")
     title = soup.title.string if soup.title else "NO TITLE"
-    print(f"[DEBUG] title: {title}")
+    print(f"[DEBUG{' ' + label if label else ''}] title: {title}")
     all_classes = set()
     for el in soup.find_all(True):
         for cls in (el.get("class") or []):
@@ -96,10 +96,14 @@ def _debug_html(html: str, url: str):
     ))
     print(f"[DEBUG] classes: {interesting[:50]}")
     body = soup.find("body")
-    print(f"[DEBUG] html[:3000]:\n{str(body)[:3000]}")
+    print(f"[DEBUG] html[:2000]:\n{str(body)[:2000]}")
 
 
-def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
+def _is_challenge_page(html: str) -> bool:
+    return "cf-turnstile" in html or "verificação de segurança" in html.lower() or "just a moment" in html.lower()
+
+
+def _parse_page(html: str, category: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     products = []
     now = datetime.utcnow().isoformat()
@@ -130,7 +134,7 @@ def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
             cards = candidates[:60]
 
     if not cards:
-        _debug_html(html, page_url)
+        _debug_html(html)
         return products
 
     for card in cards:
@@ -214,6 +218,19 @@ def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
     return products
 
 
+async def _load_page(page, url: str) -> str:
+    """Navigate and wait for challenge to resolve or content to load."""
+    await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+    # If Cloudflare challenge detected, wait up to 20s for it to auto-resolve
+    for _ in range(4):
+        await page.wait_for_timeout(5000)
+        html = await page.content()
+        if not _is_challenge_page(html):
+            return html
+        print("  [cf] challenge detected, waiting...")
+    return await page.content()
+
+
 async def scrape() -> list[dict]:
     all_products: dict[str, dict] = {}
 
@@ -232,18 +249,20 @@ async def scrape() -> list[dict]:
             viewport={"width": 1280, "height": 800},
         )
         page = await context.new_page()
+        await stealth_async(page)  # patch navigator.webdriver & fingerprints
 
         for category, base_url in CATEGORY_URLS.items():
             print(f"\n[{category}]")
             for page_num in range(1, 11):
                 url = _page_url(base_url, page_num)
                 try:
-                    # Use domcontentloaded — networkidle hangs forever on Cloudflare
-                    await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-                    await page.wait_for_timeout(5000)  # wait for JS / Cloudflare resolve
+                    html = await _load_page(page, url)
 
-                    html = await page.content()
-                    items = _parse_page(html, category, url)
+                    if _is_challenge_page(html):
+                        print(f"  page {page_num}: still on challenge after 20s — stopping category")
+                        break
+
+                    items = _parse_page(html, category)
 
                     if not items:
                         print(f"  page {page_num}: 0 items — stopping category")
