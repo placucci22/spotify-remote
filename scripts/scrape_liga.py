@@ -1,5 +1,5 @@
 """
-Playwright scraper for ligapokemon.com.br — runs in GitHub Actions.
+Playwright scraper for ligapokemon.com.br — runs on Render.com cron.
 Stores results in Upstash Redis so the Vercel API can read them.
 """
 import asyncio
@@ -16,7 +16,6 @@ from playwright.async_api import async_playwright
 
 BASE_URL = "https://www.ligapokemon.com.br"
 
-# Category IDs confirmed by user navigating the site
 CATEGORY_URLS = {
     "booster_box":    f"{BASE_URL}/?view=cards/search&card=categ%3D10+searchprod%3D1",
     "etb":            f"{BASE_URL}/?view=cards%2Fsearch&card=categ%3D27+searchprod%3D1&tipo=1",
@@ -28,25 +27,21 @@ CATEGORY_URLS = {
 KV_URL   = os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ["KV_REST_API_URL"]
 KV_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ["KV_REST_API_TOKEN"]
 KV_KEY   = "liga_products_v1"
-KV_TTL   = 90_000  # 25 hours
+KV_TTL   = 90_000
 
 _debug_done = False
 
-# Chromium flags for Docker containers with limited RAM (512MB)
+# Safe flags for Playwright in Docker — no --single-process (breaks IPC)
 CHROMIUM_ARGS = [
     "--no-sandbox",
-    "--disable-dev-shm-usage",   # use /tmp instead of /dev/shm (64MB in Docker)
+    "--disable-dev-shm-usage",
     "--disable-gpu",
-    "--no-zygote",
-    "--single-process",          # single process = lower memory
     "--disable-extensions",
     "--disable-background-networking",
     "--disable-default-apps",
     "--mute-audio",
 ]
 
-
-# ── URL helpers ─────────────────────────────────────────────
 
 def _page_url(base: str, page_num: int) -> str:
     if page_num == 1:
@@ -56,8 +51,6 @@ def _page_url(base: str, page_num: int) -> str:
         return base[:idx] + f"+pagina%3D{page_num}" + base[idx:]
     return base + f"+pagina%3D{page_num}"
 
-
-# ── Parsing helpers ─────────────────────────────────────────────
 
 def _parse_price(text: str) -> float | None:
     cleaned = re.sub(r"[^\d,.]", "", text or "")
@@ -92,19 +85,18 @@ def _debug_html(html: str, url: str):
         return
     _debug_done = True
     soup = BeautifulSoup(html, "html.parser")
-    print(f"\n[DEBUG] URL: {url}")
-    print(f"[DEBUG] Page title: {soup.title.string if soup.title else 'NO TITLE'}")
+    title = soup.title.string if soup.title else "NO TITLE"
+    print(f"[DEBUG] title: {title}")
     all_classes = set()
     for el in soup.find_all(True):
         for cls in (el.get("class") or []):
             all_classes.add(cls)
     interesting = sorted(c for c in all_classes if any(
-        k in c.lower() for k in ["prod", "card", "item", "price", "preco", "name", "nom", "cat", "result"]
+        k in c.lower() for k in ["prod", "card", "item", "price", "preco", "name", "nom", "result"]
     ))
-    print(f"[DEBUG] Interesting classes: {interesting[:60]}")
+    print(f"[DEBUG] classes: {interesting[:50]}")
     body = soup.find("body")
-    body_text = str(body)[:5000] if body else html[:5000]
-    print(f"[DEBUG] Body HTML (first 5000 chars):\n{body_text}\n[/DEBUG]\n")
+    print(f"[DEBUG] html[:3000]:\n{str(body)[:3000]}")
 
 
 def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
@@ -222,8 +214,6 @@ def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
     return products
 
 
-# ── Playwright scrape ────────────────────────────────────────────
-
 async def scrape() -> list[dict]:
     all_products: dict[str, dict] = {}
 
@@ -239,7 +229,7 @@ async def scrape() -> list[dict]:
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
             locale="pt-BR",
-            viewport={"width": 1024, "height": 768},
+            viewport={"width": 1280, "height": 800},
         )
         page = await context.new_page()
 
@@ -248,8 +238,9 @@ async def scrape() -> list[dict]:
             for page_num in range(1, 11):
                 url = _page_url(base_url, page_num)
                 try:
-                    await page.goto(url, wait_until="networkidle", timeout=45_000)
-                    await page.wait_for_timeout(2000)
+                    # Use domcontentloaded — networkidle hangs forever on Cloudflare
+                    await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                    await page.wait_for_timeout(5000)  # wait for JS / Cloudflare resolve
 
                     html = await page.content()
                     items = _parse_page(html, category, url)
@@ -265,7 +256,7 @@ async def scrape() -> list[dict]:
                             new += 1
 
                     print(f"  page {page_num}: {len(items)} items ({new} new)")
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(1.0)
 
                 except Exception as e:
                     print(f"  page {page_num}: error — {e}")
@@ -276,8 +267,6 @@ async def scrape() -> list[dict]:
 
     return list(all_products.values())
 
-
-# ── KV store ─────────────────────────────────────────────────
 
 def save_to_kv(products: list[dict], scraped_at: str) -> bool:
     payload = json.dumps({"products": products, "scraped_at": scraped_at}, ensure_ascii=False)
@@ -291,8 +280,6 @@ def save_to_kv(products: list[dict], scraped_at: str) -> bool:
         print(f"  KV error: {r.status_code} {r.text[:200]}")
     return r.status_code == 200
 
-
-# ── Main ─────────────────────────────────────────────────────
 
 async def main():
     print("=== Liga Pokémon scraper ===")
