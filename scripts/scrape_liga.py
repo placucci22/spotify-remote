@@ -158,6 +158,22 @@ def _parse_page(html: str, category: str) -> list[dict]:
 
 # ── Playwright scrape ────────────────────────────────────────────────────────
 
+LOAD_MORE_SELECTORS = [
+    "button:has-text('Exibir mais')",
+    "a:has-text('Exibir mais')",
+    "button:has-text('Ver mais')",
+    "a:has-text('Ver mais')",
+    "[class*='load-more']",
+    "[class*='loadmore']",
+    "[class*='ver-mais']",
+    "[class*='exibir-mais']",
+]
+
+
+async def _count_cards(page) -> int:
+    return await page.eval_on_selector_all(".card h5.card-title", "els => els.length")
+
+
 async def scrape() -> list[dict]:
     all_products: dict[str, dict] = {}
 
@@ -177,41 +193,59 @@ async def scrape() -> list[dict]:
         )
         page = await context.new_page()
 
-        for category, base_url in CATEGORY_URLS.items():
+        for category, url in CATEGORY_URLS.items():
             print(f"\n[{category}]")
-            for page_num in range(1, 21):
-                url = _page_url(base_url, page_num)
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
                 try:
-                    await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-                    # Wait for product cards to appear
+                    await page.wait_for_selector(".card h5.card-title", timeout=8_000)
+                except Exception:
+                    await page.wait_for_timeout(5_000)
+
+                html = await page.content()
+                if _is_challenge(html):
+                    print("  Cloudflare challenge detected — skipping")
+                    continue
+
+                clicks = 0
+                while clicks < 30:
+                    before = await _count_cards(page)
+
+                    # Find and click a "load more" button
+                    clicked = False
+                    for sel in LOAD_MORE_SELECTORS:
+                        btn = page.locator(sel).first
+                        if await btn.count() > 0 and await btn.is_visible():
+                            await btn.scroll_into_view_if_needed()
+                            await btn.click()
+                            clicked = True
+                            clicks += 1
+                            break
+
+                    if not clicked:
+                        break
+
+                    # Wait for new cards to appear
                     try:
-                        await page.wait_for_selector(".card h5.card-title", timeout=8_000)
+                        await page.wait_for_function(
+                            f"document.querySelectorAll('.card h5.card-title').length > {before}",
+                            timeout=6_000,
+                        )
                     except Exception:
-                        await page.wait_for_timeout(5_000)
-                    html = await page.content()
+                        break  # no new cards loaded — done
 
-                    if _is_challenge(html):
-                        print(f"  page {page_num}: Cloudflare challenge detected — cannot proceed")
-                        break
+                    after = await _count_cards(page)
+                    print(f"  click {clicks}: {before} → {after} cards")
 
-                    items = _parse_page(html, category)
+                html = await page.content()
+                items = _parse_page(html, category)
+                new = sum(1 for item in items if item["id"] not in all_products)
+                for item in items:
+                    all_products[item["id"]] = item
+                print(f"  total: {len(items)} items ({new} new, {clicks} load-more clicks)")
 
-                    if not items:
-                        print(f"  page {page_num}: 0 items — stopping category")
-                        break
-
-                    new = 0
-                    for item in items:
-                        if item["id"] not in all_products:
-                            all_products[item["id"]] = item
-                            new += 1
-
-                    print(f"  page {page_num}: {len(items)} items ({new} new)")
-                    await asyncio.sleep(1.0)
-
-                except Exception as e:
-                    print(f"  page {page_num}: error — {e}")
-                    break
+            except Exception as e:
+                print(f"  error — {e}")
 
         await browser.close()
 
