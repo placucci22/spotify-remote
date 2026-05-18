@@ -2,7 +2,8 @@
 Scraper for ligapokemon.com.br
 Fetches sealed product listings (booster boxes, ETBs, tins, etc.)
 """
-import requests
+import cloudscraper
+from urllib.parse import quote as url_quote
 from bs4 import BeautifulSoup
 import hashlib
 import time
@@ -11,15 +12,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Optional
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
+# cloudscraper handles Cloudflare / anti-bot challenges automatically
+_scraper = cloudscraper.create_scraper(
+    browser={"browser": "chrome", "platform": "windows", "mobile": False}
+)
 
 BASE_URL = "https://www.ligapokemon.com.br"
 
@@ -96,7 +92,7 @@ def scrape_products(max_pages: int = 3) -> list[dict]:
         for page in range(1, max_pages + 1):
             url = f"{base_url}&pagina={page}"
             try:
-                resp = requests.get(url, headers=HEADERS, timeout=10)
+                resp = _scraper.get(url, timeout=10)
                 if resp.status_code != 200:
                     break
                 soup = BeautifulSoup(resp.text, "html.parser")
@@ -132,7 +128,7 @@ def scrape_all_categories(max_pages: int = 6, max_workers: int = 8, request_time
     def fetch_page(task):
         category, page, url = task
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=request_timeout)
+            resp = _scraper.get(url, timeout=request_timeout)
             if resp.status_code != 200:
                 return []
             soup = BeautifulSoup(resp.text, "html.parser")
@@ -234,9 +230,9 @@ def _scrape_search_fallback() -> list[dict]:
     search_terms = ["booster box", "elite trainer box", "tin pokemon"]
 
     for term in search_terms:
-        url = f"{BASE_URL}/?view=cards/list&q={requests.utils.quote(term)}"
+        url = f"{BASE_URL}/?view=cards/list&q={url_quote(term)}"
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=15)
+            resp = _scraper.get(url, timeout=15)
             if resp.status_code == 200:
                 soup = BeautifulSoup(resp.text, "html.parser")
                 items = _parse_product_list(soup, "sealed")
@@ -251,7 +247,7 @@ def _scrape_search_fallback() -> list[dict]:
 def scrape_product_detail(url: str) -> Optional[dict]:
     """Fetch extra details from a product page."""
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp = _scraper.get(url, timeout=15)
         if resp.status_code != 200:
             return None
         soup = BeautifulSoup(resp.text, "html.parser")
