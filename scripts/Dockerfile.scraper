@@ -1,5 +1,6 @@
-FROM mcr.microsoft.com/playwright/python:v1.52.0-jammy
+FROM python:3.11-slim
 WORKDIR /app
 COPY scripts/scrape_liga.py scrape_liga.py
-RUN pip install --quiet requests beautifulsoup4
+RUN pip install requests beautifulsoup4 playwright && \
+    playwright install chromium --with-deps
 CMD ["python", "scrape_liga.py"]
