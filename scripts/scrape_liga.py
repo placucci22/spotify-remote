@@ -3,6 +3,8 @@ Playwright scraper for ligapokemon.com.br.
 Runs locally (Mac/Linux) or on Render.com cron.
 Stores results in Upstash Redis so the Vercel API can read them.
 """
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
@@ -77,7 +79,7 @@ def _extract_set_name(name: str) -> str:
     return " ".join(filtered[:4]) if filtered else name
 
 
-def _debug_html(html: str):
+def _debug_html(html: str) -> None:
     global _debug_done
     if _debug_done:
         return
@@ -85,7 +87,7 @@ def _debug_html(html: str):
     soup = BeautifulSoup(html, "html.parser")
     title = soup.title.string if soup.title else "NO TITLE"
     print(f"[DEBUG] title: {title}")
-    all_classes: set[str] = set()
+    all_classes: set = set()
     for el in soup.find_all(True):
         for cls in (el.get("class") or []):
             all_classes.add(cls)
@@ -106,7 +108,7 @@ def _is_challenge(html: str) -> bool:
     )
 
 
-def _parse_page(html: str, category: str) -> list[dict]:
+def _parse_page(html: str, category: str) -> list:
     soup = BeautifulSoup(html, "html.parser")
     products = []
     now = datetime.utcnow().isoformat()
@@ -221,8 +223,8 @@ def _parse_page(html: str, category: str) -> list[dict]:
     return products
 
 
-async def scrape() -> list[dict]:
-    all_products: dict[str, dict] = {}
+async def scrape() -> list:
+    all_products: dict = {}
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
@@ -278,7 +280,7 @@ async def scrape() -> list[dict]:
     return list(all_products.values())
 
 
-def save_to_kv(products: list[dict], scraped_at: str) -> bool:
+def save_to_kv(products: list, scraped_at: str) -> bool:
     payload = json.dumps({"products": products, "scraped_at": scraped_at}, ensure_ascii=False)
     r = requests.post(
         f"{KV_URL}/pipeline",
@@ -291,7 +293,7 @@ def save_to_kv(products: list[dict], scraped_at: str) -> bool:
     return r.status_code == 200
 
 
-async def main():
+async def main() -> None:
     print("=== Liga Pokémon scraper ===")
     products = await scrape()
     print(f"\nTotal: {len(products)} produtos")
