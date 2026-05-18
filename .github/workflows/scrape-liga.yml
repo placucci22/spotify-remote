@@ -1,0 +1,29 @@
+name: Scrape Liga Pokémon
+
+on:
+  schedule:
+    - cron: "0 9 * * *"   # 06:00 BRT (UTC-3)
+  workflow_dispatch:        # manual trigger
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4 playwright
+          playwright install chromium --with-deps
+
+      - name: Scrape and store in Redis
+        env:
+          KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
+          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
+        run: python scripts/scrape_liga.py
