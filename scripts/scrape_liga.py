@@ -104,53 +104,33 @@ def _parse_page(html: str, category: str) -> list[dict]:
     products = []
     now = datetime.utcnow().isoformat()
 
-    cards = (
-        soup.select(".card-produto")
-        or soup.select(".produto-item")
-        or soup.select("[class*='product-item']")
-        or soup.select("[class*='produto']")
-        or soup.select(".item")
-    )
-
-    if not cards:
-        # Debug: dump first 2000 chars so we can see what class names the site uses
-        print(f"  [debug] no cards found. page snippet:\n{html[:2000]}\n---")
+    # .card elements that don't contain nested .card (skip best-sellers containers)
+    all_cards = soup.select(".card")
+    cards = [c for c in all_cards if not c.select(".card")]
 
     for card in cards:
         try:
-            name_el = (
-                card.select_one(".nome-produto")
-                or card.select_one(".product-name")
-                or card.select_one("h2")
-                or card.select_one("h3")
-                or card.select_one("a[title]")
-            )
-            price_el = (
-                card.select_one(".preco")
-                or card.select_one(".price")
-                or card.select_one("[class*='preco']")
-                or card.select_one("[class*='price']")
-            )
-            link_el = card.select_one("a[href]")
-            img_el  = card.select_one("img")
+            name_el  = card.select_one("h5.card-title a") or card.select_one("h5.card-title")
+            price_el = card.select_one(".smallest-price")
+            link_el  = card.select_one("h5.card-title a") or card.select_one("a[href]")
+            img_el   = card.select_one("img")
 
             if not name_el or not price_el:
                 continue
 
-            name  = name_el.get_text(strip=True) or name_el.get("title", "")
+            name  = name_el.get_text(strip=True)
             price = _parse_price(price_el.get_text(strip=True))
 
             if not name or not price:
                 continue
 
-            href = (link_el.get("href", "") if link_el else "")
+            href = link_el.get("href", "") if link_el else ""
             url  = href if href.startswith("http") else f"{BASE_URL}{href}"
             img  = (img_el.get("src") or img_el.get("data-src") or "") if img_el else ""
+            if img.startswith("//"):
+                img = "https:" + img
 
-            stock_el = card.select_one(".estoque") or card.select_one("[class*='stock']")
-            in_stock = True
-            if stock_el:
-                in_stock = "esgotado" not in stock_el.get_text(strip=True).lower()
+            in_stock = "esgotado" not in card.get_text(strip=True).lower()
 
             pid = hashlib.md5(f"{name}{url}".encode()).hexdigest()[:16]
             products.append({
@@ -198,7 +178,11 @@ async def scrape() -> list[dict]:
                 url = _page_url(base_url, page_num)
                 try:
                     await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-                    await page.wait_for_timeout(3000)
+                    # Wait for product cards to appear
+                    try:
+                        await page.wait_for_selector(".card h5.card-title", timeout=8_000)
+                    except Exception:
+                        await page.wait_for_timeout(5_000)
                     html = await page.content()
 
                     if _is_challenge(html):
