@@ -1,5 +1,6 @@
 {
-  "buildCommand": "cd frontend && npm install && ./node_modules/.bin/vite build",
+  "installCommand": "cd frontend && npm install",
+  "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "functions": {
     "api/index.py": {
