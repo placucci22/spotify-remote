@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Playwright scraper for ligapokemon.com.br — runs in GitHub Actions.
 Stores results in Upstash Redis so the Vercel API can read them.

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Playwright scraper for Liga Pokémon single cards — runs locally on Mac.
 Targets English (ING) card editions only.
