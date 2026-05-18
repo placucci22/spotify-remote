@@ -21,7 +21,7 @@ from scrapers.tcgplayer import get_price_for_product_name
 from scrapers.price_charting import get_sealed_price_and_trend
 from services.exchange_rate import get_usd_brl, usd_to_brl_direct
 from services.ev_calculator import calculate_ev, STATIC_EV_DATA
-from services.kv_store import kv_get_products, kv_set_products
+from services.kv_store import kv_get_products, kv_set_products, kv_get_cards
 
 # ──────────────────────────────────────────────
 # App + Security middleware
@@ -336,6 +336,64 @@ def dashboard():
         "total_sealed": len(sealed),
         "best_ev_boxes": ev_list[:12],
         "last_updated": _last_scrape or datetime.now().isoformat(),
+    }
+
+
+@app.get("/api/cards")
+def get_cards(
+    language: Optional[str] = Query(None, max_length=10),
+    set_name: Optional[str] = Query(None, max_length=120),
+    rarity: Optional[str] = Query(None, max_length=60),
+    search: Optional[str] = Query(None, max_length=120),
+    min_price: Optional[float] = Query(None, ge=0, le=1_000_000),
+    sort_by: str = Query("price_brl", max_length=20),
+    limit: int = Query(200, ge=1, le=500),
+):
+    data = kv_get_cards()
+    if not data or not data.get("cards"):
+        return {"cards": [], "total": 0, "last_updated": None, "message": "Sem dados de cartas. Execute o scraper local."}
+
+    cards = data["cards"]
+    search = _sanitize(search)
+    set_name = _sanitize(set_name)
+    rarity = _sanitize(rarity)
+
+    # Filters
+    if language:
+        lang_lower = language.lower()
+        cards = [c for c in cards if c.get("language", "").lower() == lang_lower]
+    if set_name:
+        s = set_name.lower()
+        cards = [c for c in cards if s in c.get("set_name", "").lower()]
+    if rarity:
+        r = rarity.lower()
+        cards = [c for c in cards if r in c.get("rarity", "").lower()]
+    if search:
+        s = search.lower()
+        cards = [c for c in cards if s in c.get("name", "").lower()]
+    if min_price is not None:
+        cards = [c for c in cards if c.get("price_brl", 0) >= min_price]
+
+    # Sort
+    reverse = sort_by not in ("name", "set_name", "rarity")
+    key_map = {
+        "price_brl": lambda c: c.get("price_brl", 0),
+        "name": lambda c: c.get("name", ""),
+        "set_name": lambda c: c.get("set_name", ""),
+        "rarity": lambda c: c.get("rarity", ""),
+    }
+    sort_fn = key_map.get(sort_by, key_map["price_brl"])
+    cards = sorted(cards, key=sort_fn, reverse=reverse)
+
+    sets = sorted({c.get("set_name", "") for c in data["cards"] if c.get("language", "en") == "en"})
+    rarities = sorted({c.get("rarity", "") for c in data["cards"] if c.get("rarity")})
+
+    return {
+        "cards": cards[:limit],
+        "total": len(cards),
+        "last_updated": data.get("scraped_at"),
+        "available_sets": sets,
+        "available_rarities": rarities,
     }
 
 

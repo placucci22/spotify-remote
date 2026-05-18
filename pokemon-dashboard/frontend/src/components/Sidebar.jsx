@@ -5,6 +5,7 @@ import {
   Calculator,
   ArrowLeftRight,
   Zap,
+  Layers,
 } from "lucide-react";
 
 export const NAV_LINKS = [
@@ -12,6 +13,7 @@ export const NAV_LINKS = [
   { to: "/products", icon: Package, label: "Produtos" },
   { to: "/ev", icon: Calculator, label: "EV Caixas" },
   { to: "/compare", icon: ArrowLeftRight, label: "BR vs EUA" },
+  { to: "/cards", icon: Layers, label: "Singles" },
 ];
 
 export default function Sidebar() {

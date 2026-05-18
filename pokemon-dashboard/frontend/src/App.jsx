@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import BoxAnalysis from "./pages/BoxAnalysis";
 import Comparison from "./pages/Comparison";
+import Cards from "./pages/Cards";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/products" element={<Products />} />
           <Route path="/ev" element={<BoxAnalysis />} />
           <Route path="/compare" element={<Comparison />} />
+          <Route path="/cards" element={<Cards />} />
         </Routes>
       </main>
       <MobileNav />

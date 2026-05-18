@@ -17,6 +17,9 @@ _KV_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN") or os.getenv("KV_REST_API_TOKE
 PRODUCTS_KEY = "liga_products_v1"
 PRODUCTS_TTL = 90_000  # 25 hours in seconds
 
+CARDS_KEY = "liga_cards_v1"
+CARDS_TTL = 90_000
+
 
 def _available() -> bool:
     return bool(_KV_URL and _KV_TOKEN)
@@ -59,4 +62,40 @@ def kv_set_products(products: list, scraped_at: str) -> bool:
         return r.status_code == 200
     except Exception as e:
         print(f"[kv_store] set error: {e}")
+        return False
+
+
+def kv_get_cards() -> Optional[dict]:
+    """Return {"cards": [...], "scraped_at": "..."} or None."""
+    if not _available():
+        return None
+    try:
+        r = requests.get(
+            f"{_KV_URL}/get/{CARDS_KEY}",
+            headers=_headers(),
+            timeout=5,
+        )
+        result = r.json().get("result")
+        if result:
+            return json.loads(result)
+    except Exception as e:
+        print(f"[kv_store] cards get error: {e}")
+    return None
+
+
+def kv_set_cards(cards: list, scraped_at: str) -> bool:
+    """Store cards in KV with a 25h TTL. Returns True on success."""
+    if not _available():
+        return False
+    try:
+        payload = json.dumps({"cards": cards, "scraped_at": scraped_at}, ensure_ascii=False)
+        r = requests.post(
+            f"{_KV_URL}/pipeline",
+            json=[["SET", CARDS_KEY, payload, "EX", str(CARDS_TTL)]],
+            headers={**_headers(), "Content-Type": "application/json"},
+            timeout=10,
+        )
+        return r.status_code == 200
+    except Exception as e:
+        print(f"[kv_store] cards set error: {e}")
         return False

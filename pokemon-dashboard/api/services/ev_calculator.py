@@ -119,9 +119,48 @@ STATIC_EV_DATA = {
 }
 
 
+# PT-BR set names → English STATIC_EV_DATA keys (longest phrases first to avoid partial hits)
+_PTBR_TO_EN_SET = [
+    ("amigos de jornada", "journey together"),
+    ("faíscas surpreendentes", "surging sparks"),
+    ("evoluções prismáticas", "prismatic evolutions"),
+    ("mascarada do crepúsculo", "twilight masquerade"),
+    ("forças temporais", "temporal forces"),
+    ("coroa estelar", "stellar crown"),
+    ("fenda paradoxal", "paradox rift"),
+    ("chamas obsidiana", "obsidian flames"),
+    ("evoluções em paldea", "paldea evolved"),
+    ("escarlate e violeta 151", "scarlet & violet 151"),
+    ("escarlate e violeta 9", "journey together"),
+    ("escarlate e violeta 8", "surging sparks"),
+    ("escarlate e violeta 7.5", "prismatic evolutions"),
+    ("escarlate e violeta 7", "stellar crown"),
+    ("escarlate e violeta 6.5", "twilight masquerade"),
+    ("escarlate e violeta 6", "temporal forces"),
+    ("escarlate e violeta 5", "temporal forces"),
+    ("escarlate e violeta 4", "paradox rift"),
+    ("escarlate e violeta 3.5", "scarlet & violet 151"),
+    ("escarlate e violeta 3", "obsidian flames"),
+    ("escarlate e violeta 2", "paldea evolved"),
+    ("sv9", "journey together"),
+    ("sv8", "surging sparks"),
+    ("sv7", "stellar crown"),
+    ("sv6", "twilight masquerade"),
+    ("sv5", "temporal forces"),
+    ("sv4", "paradox rift"),
+]
+
+
 def _match_set(product_name: str) -> str:
-    """Match a product name to a known set key."""
+    """Match a product name to a known set key, normalizing PT-BR names first."""
     name_lower = product_name.lower()
+    # Strip language prefix like (PT-BR), (ING), (JAP)
+    name_lower = name_lower.split(")", 1)[-1] if ")" in name_lower else name_lower
+    # Normalize PT-BR set names to English equivalents
+    for ptbr, en in _PTBR_TO_EN_SET:
+        if ptbr in name_lower:
+            name_lower = name_lower.replace(ptbr, en)
+            break
     for key in STATIC_EV_DATA:
         if key in name_lower:
             return key
