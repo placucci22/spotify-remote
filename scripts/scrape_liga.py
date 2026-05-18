@@ -16,18 +16,13 @@ from playwright.async_api import async_playwright
 
 BASE_URL = "https://www.ligapokemon.com.br"
 
-# URL format confirmed from site: ?view=cards/search&card=categ%3D{N}+searchprod%3D1
-# categ=10 → Caixas de Boosters (confirmed)
-# categ=9  → Caixa Treinador Avançado (ETB) — to confirm
-# categ=7  → Latas (tins) — to confirm
-# categ=6  → Blisters — to confirm
-# categ=11 → Box Colecionável — to confirm
+# Category IDs confirmed by user navigating the site
 CATEGORY_URLS = {
-    "booster_box": f"{BASE_URL}/?view=cards/search&card=categ%3D10+searchprod%3D1",
-    "etb":         f"{BASE_URL}/?view=cards/search&card=categ%3D9+searchprod%3D1",
-    "tin":         f"{BASE_URL}/?view=cards/search&card=categ%3D7+searchprod%3D1",
-    "blister":     f"{BASE_URL}/?view=cards/search&card=categ%3D6+searchprod%3D1",
-    "collection":  f"{BASE_URL}/?view=cards/search&card=categ%3D11+searchprod%3D1",
+    "booster_box":    f"{BASE_URL}/?view=cards/search&card=categ%3D10+searchprod%3D1",
+    "etb":            f"{BASE_URL}/?view=cards%2Fsearch&card=categ%3D27+searchprod%3D1&tipo=1",
+    "tin":            f"{BASE_URL}/?view=cards%2Fsearch&card=categ%3D24+searchprod%3D1&tipo=1",
+    "blister":        f"{BASE_URL}/?view=cards%2Fsearch&card=categ%3D25+searchprod%3D1&tipo=1",
+    "booster_single": f"{BASE_URL}/?view=cards/search&card=categ%3D21+searchprod%3D1",
 }
 
 KV_URL   = os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ["KV_REST_API_URL"]
@@ -36,6 +31,20 @@ KV_KEY   = "liga_products_v1"
 KV_TTL   = 90_000  # 25 hours
 
 _debug_done = False  # print full HTML debug only once
+
+
+# ── URL helpers ────────────────────────────────────────────────
+
+def _page_url(base: str, page_num: int) -> str:
+    """Insert pagina=N into the card= query param (before any trailing &)."""
+    if page_num == 1:
+        return base
+    # card=categ%3D10+searchprod%3D1  ->  card=categ%3D10+searchprod%3D1+pagina%3DN
+    # Must insert before any &tipo=1 or other trailing params
+    if "&" in base:
+        idx = base.index("&")
+        return base[:idx] + f"+pagina%3D{page_num}" + base[idx:]
+    return base + f"+pagina%3D{page_num}"
 
 
 # ── Parsing helpers ─────────────────────────────────────────────
@@ -58,7 +67,7 @@ def _extract_set_name(name: str) -> str:
         "booster", "box", "display", "elite", "trainer", "etb", "tin",
         "blister", "coleção", "collection", "premium", "bundle", "pokemon",
         "pokémon", "tcg", "pack", "pacote", "caixa", "lata", "kit",
-        "treinador", "avançado", "caixas", "boosters",
+        "treinador", "avançado", "caixas", "boosters", "avulso",
     }
     parts = name.split("-")
     if len(parts) > 1:
@@ -81,9 +90,9 @@ def _debug_html(html: str, url: str):
         for cls in (el.get("class") or []):
             all_classes.add(cls)
     interesting = sorted(c for c in all_classes if any(
-        k in c.lower() for k in ["prod", "card", "item", "price", "preco", "name", "nom", "cat"]
+        k in c.lower() for k in ["prod", "card", "item", "price", "preco", "name", "nom", "cat", "result"]
     ))
-    print(f"[DEBUG] Interesting classes: {interesting[:50]}")
+    print(f"[DEBUG] Interesting classes: {interesting[:60]}")
     body = soup.find("body")
     body_text = str(body)[:5000] if body else html[:5000]
     print(f"[DEBUG] Body HTML (first 5000 chars):\n{body_text}\n[/DEBUG]\n")
@@ -94,7 +103,7 @@ def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
     products = []
     now = datetime.utcnow().isoformat()
 
-    # Try multiple selector strategies
+    # Try known selectors first, then broaden
     cards = (
         soup.select(".card-produto")
         or soup.select(".produto-item")
@@ -102,19 +111,24 @@ def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
         or soup.select("li.item")
         or soup.select("[class*='produto']")
         or soup.select("[class*='product']")
+        or soup.select(".result-item")
+        or soup.select(".search-item")
     )
 
-    # Fallback: any leaf div/li/article that contains "R$"
+    # Fallback: any leaf container that holds a R$ price
     if not cards:
         candidates = []
         for el in soup.find_all(["div", "article", "li"]):
             if "R$" in el.get_text():
-                children_with_price = [c for c in el.find_all(["div", "article", "li"]) if "R$" in c.get_text()]
+                children_with_price = [
+                    c for c in el.find_all(["div", "article", "li"])
+                    if "R$" in c.get_text()
+                ]
                 if not children_with_price:
                     candidates.append(el)
         if candidates:
             print(f"  [parse] fallback: {len(candidates)} R$-containing elements")
-            cards = candidates[:50]
+            cards = candidates[:60]
 
     if not cards:
         _debug_html(html, page_url)
@@ -140,7 +154,7 @@ def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
                 or card.select_one("[class*='preco']")
                 or card.select_one("[class*='price']")
             )
-            # If no price element, find innermost element with R$ text
+            # Last resort: innermost element containing "R$"
             if not price_el:
                 for el in card.find_all(True):
                     t = el.get_text(strip=True)
@@ -167,7 +181,12 @@ def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
             url  = href if href.startswith("http") else f"{BASE_URL}/{href.lstrip('/')}"
             img  = ""
             if img_el:
-                img = img_el.get("src") or img_el.get("data-src") or img_el.get("data-lazy-src") or ""
+                img = (
+                    img_el.get("src")
+                    or img_el.get("data-src")
+                    or img_el.get("data-lazy-src")
+                    or ""
+                )
 
             stock_el = (
                 card.select_one(".estoque")
@@ -218,14 +237,10 @@ async def scrape() -> list[dict]:
         for category, base_url in CATEGORY_URLS.items():
             print(f"\n[{category}] {base_url}")
             for page_num in range(1, 11):
-                if page_num == 1:
-                    url = base_url
-                else:
-                    url = base_url + f"+pagina%3D{page_num}"
-
+                url = _page_url(base_url, page_num)
                 try:
                     await page.goto(url, wait_until="networkidle", timeout=45_000)
-                    await page.wait_for_timeout(2500)  # extra wait for JS render
+                    await page.wait_for_timeout(2500)
 
                     html = await page.content()
                     items = _parse_page(html, category, url)
