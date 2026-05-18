@@ -19,7 +19,7 @@ from mangum import Mangum
 from scrapers.liga_pokemon import scrape_products
 from scrapers.tcgplayer import get_price_for_product_name
 from scrapers.price_charting import get_sealed_price_and_trend
-from services.exchange_rate import get_usd_brl, effective_import_cost_brl, BRAZIL_IMPORT_TAX_FACTOR
+from services.exchange_rate import get_usd_brl, usd_to_brl_direct
 from services.ev_calculator import calculate_ev, STATIC_EV_DATA
 
 # ──────────────────────────────────────────────
@@ -189,13 +189,13 @@ def product_analysis(product_id: str):
         raise HTTPException(status_code=404, detail="Produto não encontrado")
     rate = get_usd_brl()
     tcg_usd = get_price_for_product_name(product["name"])
-    import_cost = effective_import_cost_brl(tcg_usd, rate) if tcg_usd else None
-    savings = round(((import_cost - product["price_brl"]) / import_cost) * 100, 1) if import_cost else None
+    tcg_brl = usd_to_brl_direct(tcg_usd, rate) if tcg_usd else None
+    savings = round(((tcg_brl - product["price_brl"]) / tcg_brl) * 100, 1) if tcg_brl else None
     ev = calculate_ev(product["name"], product["price_brl"])
     return {
         "product": product,
         "tcgplayer_usd": tcg_usd,
-        "import_cost_brl": import_cost,
+        "tcgplayer_brl": tcg_brl,
         "savings_pct": savings,
         "ev_analysis": ev,
     }
@@ -217,19 +217,17 @@ def compare_products(
         name = product["name"]
         price_brl = product["price_brl"]
         tcgplayer_usd = get_price_for_product_name(name)
-        import_cost = effective_import_cost_brl(tcgplayer_usd, rate) if tcgplayer_usd else None
+        tcg_brl = usd_to_brl_direct(tcgplayer_usd, rate) if tcgplayer_usd else None
         savings_pct = None
-        if import_cost:
-            savings_pct = round(((import_cost - price_brl) / import_cost) * 100, 1)
+        if tcg_brl:
+            savings_pct = round(((tcg_brl - price_brl) / tcg_brl) * 100, 1)
 
         results.append({
             "id": product["id"],
             "name": name,
             "price_brl": price_brl,
             "tcgplayer_usd": tcgplayer_usd,
-            "tcgplayer_brl": round(tcgplayer_usd * rate, 2) if tcgplayer_usd else None,
-            "import_cost_brl": import_cost,
-            "import_tax_factor": BRAZIL_IMPORT_TAX_FACTOR,
+            "tcgplayer_brl": tcg_brl,
             "savings_pct": savings_pct,
             "is_good_deal": (savings_pct or 0) > 5,
             "recommendation": _price_label(savings_pct),
@@ -290,9 +288,9 @@ def dashboard():
     for p in sealed[:15]:
         tcg_usd = get_price_for_product_name(p["name"])
         if tcg_usd:
-            import_cost = effective_import_cost_brl(tcg_usd, rate)
-            savings = ((import_cost - p["price_brl"]) / import_cost) * 100
-            best_deals.append({**p, "savings_pct": round(savings, 1), "tcgplayer_usd": tcg_usd, "import_cost_brl": round(import_cost, 2)})
+            tcg_brl = usd_to_brl_direct(tcg_usd, rate)
+            savings = ((tcg_brl - p["price_brl"]) / tcg_brl) * 100
+            best_deals.append({**p, "savings_pct": round(savings, 1), "tcgplayer_usd": tcg_usd, "tcgplayer_brl": round(tcg_brl, 2)})
 
     best_deals.sort(key=lambda x: x.get("savings_pct", -999), reverse=True)
 

@@ -89,15 +89,6 @@ def convert_brl_to_usd(brl: float, rate: Optional[float] = None) -> float:
     return round(brl / rate, 2)
 
 
-# Brazil's import tax for Pokemon cards/sealed products is typically 60% IOF+II+ICMS
-# This is the real effective cost when importing from the USA to Brazil
-BRAZIL_IMPORT_TAX_FACTOR = 1.60
-
-
-def effective_import_cost_brl(usd_price: float, rate: Optional[float] = None) -> float:
-    """
-    Calculate the real cost of importing an item from the USA to Brazil,
-    including the standard ~60% import tax.
-    """
-    brl = convert_usd_to_brl(usd_price, rate)
-    return round(brl * BRAZIL_IMPORT_TAX_FACTOR, 2)
+def usd_to_brl_direct(usd_price: float, rate: Optional[float] = None) -> float:
+    """Convert USD price to BRL at the current exchange rate (no taxes applied)."""
+    return convert_usd_to_brl(usd_price, rate)

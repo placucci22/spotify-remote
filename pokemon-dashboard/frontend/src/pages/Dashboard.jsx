@@ -106,7 +106,7 @@ export default function Dashboard() {
         <section>
           <h2 className="text-base md:text-lg font-semibold text-white mb-3 flex items-center gap-2">
             <Star size={16} className="text-green-400" />
-            Melhores negócios vs importar
+            Melhores negócios vs EUA
           </h2>
 
           {/* Mobile cards */}
@@ -136,9 +136,9 @@ export default function Dashboard() {
                 <tr className="text-gray-400 text-xs border-b border-pokemon-border">
                   <th className="text-left pb-2 pr-4">Produto</th>
                   <th className="text-right pb-2 pr-4">Liga BR</th>
-                  <th className="text-right pb-2 pr-4">TCGPlayer</th>
-                  <th className="text-right pb-2 pr-4">Custo importar</th>
-                  <th className="text-right pb-2">Economia</th>
+                  <th className="text-right pb-2 pr-4">TCGPlayer USD</th>
+                  <th className="text-right pb-2 pr-4">TCGPlayer em BRL</th>
+                  <th className="text-right pb-2">Diferença</th>
                 </tr>
               </thead>
               <tbody>
@@ -149,9 +149,8 @@ export default function Dashboard() {
                     <td className="py-2 pr-4 text-right text-gray-300">
                       {p.tcgplayer_usd ? `$ ${p.tcgplayer_usd?.toFixed(0)}` : "—"}
                     </td>
-                    <td className="py-2 pr-4 text-right text-gray-400 text-xs">
-                      {p.import_cost_brl ? `R$ ${p.import_cost_brl?.toFixed(0)}` : "—"}
-                      <span className="block text-gray-600">(+60% imposto)</span>
+                    <td className="py-2 pr-4 text-right text-gray-400">
+                      {p.tcgplayer_brl ? `R$ ${p.tcgplayer_brl?.toFixed(0)}` : "—"}
                     </td>
                     <td className="py-2 text-right">
                       {p.savings_pct != null ? (
@@ -183,15 +182,15 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* Import explainer */}
+      {/* Exchange rate info */}
       <div className="card bg-blue-950/40 border-blue-800 text-xs md:text-sm text-gray-300">
-        <p className="font-semibold text-blue-300 mb-1">ℹ️ Custo de importação</p>
+        <p className="font-semibold text-blue-300 mb-1">ℹ️ Comparação de preços</p>
         <p>
-          Aplicamos 60% sobre o preço em dólar (II + IOF + ICMS típico).
-          Se o preço no Liga é menor, comprar aqui é mais vantajoso.
+          Comparamos o preço do Liga com o preço do TCGPlayer convertido pelo câmbio atual.
+          Positivo = mais barato no BR. Negativo = mais caro no BR.
         </p>
         <p className="mt-1 text-gray-500 text-xs">
-          Câmbio: R$ {data?.exchange_rate?.toFixed(2)} · Fator: 1.60×
+          Câmbio: R$ {data?.exchange_rate?.toFixed(2)} / USD
         </p>
       </div>
     </div>
