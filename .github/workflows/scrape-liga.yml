@@ -17,12 +17,16 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          pip install requests beautifulsoup4 playwright
-          playwright install chromium --with-deps
+      - name: Install Python packages
+        run: pip install requests beautifulsoup4 "playwright==1.44.0"
 
-      - name: Scrape and store in Redis
+      - name: Install Playwright browser
+        run: python -m playwright install chromium
+
+      - name: Install Playwright system dependencies
+        run: sudo python -m playwright install-deps chromium
+
+      - name: Scrape Liga Pokémon and store in Redis
         env:
           KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
           KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
