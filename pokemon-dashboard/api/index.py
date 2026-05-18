@@ -87,6 +87,31 @@ def _validate_product_id(pid: str) -> str:
 
 
 # ──────────────────────────────────────────────
+# Demo data (must be defined before cache init)
+# ──────────────────────────────────────────────
+
+def _get_demo_products() -> list[dict]:
+    now = datetime.now().isoformat()
+    return [
+        {"id": "demo-001", "name": "Booster Box Scarlet & Violet 151", "url": "https://www.ligapokemon.com.br", "price_brl": 890.0, "category": "booster_box", "set_name": "Scarlet & Violet 151", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-002", "name": "Booster Box Paradox Rift", "url": "https://www.ligapokemon.com.br", "price_brl": 650.0, "category": "booster_box", "set_name": "Paradox Rift", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-003", "name": "Booster Box Temporal Forces", "url": "https://www.ligapokemon.com.br", "price_brl": 720.0, "category": "booster_box", "set_name": "Temporal Forces", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-004", "name": "Booster Box Twilight Masquerade", "url": "https://www.ligapokemon.com.br", "price_brl": 680.0, "category": "booster_box", "set_name": "Twilight Masquerade", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-005", "name": "Booster Box Stellar Crown", "url": "https://www.ligapokemon.com.br", "price_brl": 660.0, "category": "booster_box", "set_name": "Stellar Crown", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-006", "name": "Booster Box Surging Sparks", "url": "https://www.ligapokemon.com.br", "price_brl": 750.0, "category": "booster_box", "set_name": "Surging Sparks", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-007", "name": "Booster Box Prismatic Evolutions", "url": "https://www.ligapokemon.com.br", "price_brl": 1400.0, "category": "booster_box", "set_name": "Prismatic Evolutions", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-008", "name": "Booster Box Journey Together", "url": "https://www.ligapokemon.com.br", "price_brl": 820.0, "category": "booster_box", "set_name": "Journey Together", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-009", "name": "Elite Trainer Box Scarlet & Violet 151", "url": "https://www.ligapokemon.com.br", "price_brl": 320.0, "category": "etb", "set_name": "Scarlet & Violet 151", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-010", "name": "Elite Trainer Box Prismatic Evolutions", "url": "https://www.ligapokemon.com.br", "price_brl": 480.0, "category": "etb", "set_name": "Prismatic Evolutions", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-011", "name": "Elite Trainer Box Surging Sparks", "url": "https://www.ligapokemon.com.br", "price_brl": 290.0, "category": "etb", "set_name": "Surging Sparks", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-012", "name": "Elite Trainer Box Temporal Forces", "url": "https://www.ligapokemon.com.br", "price_brl": 270.0, "category": "etb", "set_name": "Temporal Forces", "image_url": None, "in_stock": False, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-013", "name": "Booster Box Paldea Evolved", "url": "https://www.ligapokemon.com.br", "price_brl": 580.0, "category": "booster_box", "set_name": "Paldea Evolved", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-014", "name": "Tin Pikachu ex", "url": "https://www.ligapokemon.com.br", "price_brl": 180.0, "category": "tin", "set_name": "Scarlet & Violet", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+        {"id": "demo-015", "name": "Tin Charizard ex", "url": "https://www.ligapokemon.com.br", "price_brl": 195.0, "category": "tin", "set_name": "Scarlet & Violet", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
+    ]
+
+
+# ──────────────────────────────────────────────
 # In-memory cache (fresh on each cold start)
 # ──────────────────────────────────────────────
 
@@ -311,27 +336,6 @@ def _price_label(savings_pct: Optional[float]) -> str:
     if savings_pct > -20:
         return "LIGEIRAMENTE CARO"
     return "CARO"
-
-
-def _get_demo_products() -> list[dict]:
-    now = datetime.now().isoformat()
-    return [
-        {"id": "demo-001", "name": "Booster Box Scarlet & Violet 151", "url": "https://www.ligapokemon.com.br", "price_brl": 890.0, "category": "booster_box", "set_name": "Scarlet & Violet 151", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-002", "name": "Booster Box Paradox Rift", "url": "https://www.ligapokemon.com.br", "price_brl": 650.0, "category": "booster_box", "set_name": "Paradox Rift", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-003", "name": "Booster Box Temporal Forces", "url": "https://www.ligapokemon.com.br", "price_brl": 720.0, "category": "booster_box", "set_name": "Temporal Forces", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-004", "name": "Booster Box Twilight Masquerade", "url": "https://www.ligapokemon.com.br", "price_brl": 680.0, "category": "booster_box", "set_name": "Twilight Masquerade", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-005", "name": "Booster Box Stellar Crown", "url": "https://www.ligapokemon.com.br", "price_brl": 660.0, "category": "booster_box", "set_name": "Stellar Crown", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-006", "name": "Booster Box Surging Sparks", "url": "https://www.ligapokemon.com.br", "price_brl": 750.0, "category": "booster_box", "set_name": "Surging Sparks", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-007", "name": "Booster Box Prismatic Evolutions", "url": "https://www.ligapokemon.com.br", "price_brl": 1400.0, "category": "booster_box", "set_name": "Prismatic Evolutions", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-008", "name": "Booster Box Journey Together", "url": "https://www.ligapokemon.com.br", "price_brl": 820.0, "category": "booster_box", "set_name": "Journey Together", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-009", "name": "Elite Trainer Box Scarlet & Violet 151", "url": "https://www.ligapokemon.com.br", "price_brl": 320.0, "category": "etb", "set_name": "Scarlet & Violet 151", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-010", "name": "Elite Trainer Box Prismatic Evolutions", "url": "https://www.ligapokemon.com.br", "price_brl": 480.0, "category": "etb", "set_name": "Prismatic Evolutions", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-011", "name": "Elite Trainer Box Surging Sparks", "url": "https://www.ligapokemon.com.br", "price_brl": 290.0, "category": "etb", "set_name": "Surging Sparks", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-012", "name": "Elite Trainer Box Temporal Forces", "url": "https://www.ligapokemon.com.br", "price_brl": 270.0, "category": "etb", "set_name": "Temporal Forces", "image_url": None, "in_stock": False, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-013", "name": "Booster Box Paldea Evolved", "url": "https://www.ligapokemon.com.br", "price_brl": 580.0, "category": "booster_box", "set_name": "Paldea Evolved", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-014", "name": "Tin Pikachu ex", "url": "https://www.ligapokemon.com.br", "price_brl": 180.0, "category": "tin", "set_name": "Scarlet & Violet", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-        {"id": "demo-015", "name": "Tin Charizard ex", "url": "https://www.ligapokemon.com.br", "price_brl": 195.0, "category": "tin", "set_name": "Scarlet & Violet", "image_url": None, "in_stock": True, "seller": "Liga Pokémon", "scraped_at": now},
-    ]
 
 
 # Vercel handler
