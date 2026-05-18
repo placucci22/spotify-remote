@@ -75,25 +75,101 @@ _PTBR_FRAGMENTS = [
 ]
 
 
-def _normalize_name(name: str) -> Optional[str]:
+def _normalize_name(name: str) -> tuple:
     """
-    Convert a Liga Pokémon product name to a normalized English form for TCGPlayer lookup.
-    Returns None for Japanese/Chinese products (not on TCGPlayer).
+    Parse a Liga Pokémon product name.
+    Returns (normalized_str, lang) where lang is 'en', 'pt', 'jp', or 'cn'.
+    normalized_str is an English-form name ready for SEALED_PRODUCT_MAP lookup.
     """
     lang_match = re.match(r"^\s*\(([^)]+)\)\s*", name)
     if lang_match:
-        lang = lang_match.group(1).upper()
-        if any(x in lang for x in ("JAP", "JP", "CHN", "CN")):
-            return None
+        lang_code = lang_match.group(1).upper()
         rest = name[lang_match.end():]
+        if any(x in lang_code for x in ("JAP", "JP")):
+            lang = "jp"
+        elif any(x in lang_code for x in ("CHN", "CN")):
+            lang = "cn"
+        elif any(x in lang_code for x in ("ING", "EN")):
+            lang = "en"
+        else:
+            lang = "pt"
     else:
         rest = name
+        lang = "en"
 
     normalized = rest.lower()
     for ptbr, en in _PTBR_FRAGMENTS:
         normalized = normalized.replace(ptbr, en)
 
-    return normalized
+    return normalized, lang
+
+
+def _extract_set_name(product_name: str) -> str:
+    """Extract the set name segment (last ' - ' part) from a product title."""
+    rest = re.sub(r"^\([^)]+\)\s*", "", product_name)
+    parts = [s.strip() for s in rest.split(" - ")]
+    return parts[-1] if len(parts) > 1 else rest.strip()
+
+
+def _slug_from_name(name: str) -> str:
+    """Convert a set name to a URL-friendly slug."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def _get_japan_price(product_name: str) -> Optional[float]:
+    """
+    Look up a Japanese Pokémon product on TCGPlayer Japan.
+    Tries slug-based product URLs then falls back to a search page scan.
+    """
+    set_name = _extract_set_name(product_name)
+    slug = _slug_from_name(set_name)
+
+    # Try common product-type slugs for a guessed URL
+    for product_type in ("booster-box", "elite-trainer-box", "booster-pack"):
+        price = get_sealed_price(f"pokemon-japan-{slug}/{product_type}")
+        if price:
+            return price
+        time.sleep(0.2)
+
+    # Fallback: search TCGPlayer Japan and follow the first product link
+    try:
+        search_url = (
+            "https://www.tcgplayer.com/search/pokemon-japan/product"
+            f"?productLineName=pokemon-japan&q={requests.utils.quote(set_name)}&view=grid"
+        )
+        resp = requests.get(search_url, headers=HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return None
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # TCGPlayer embeds JSON-LD or puts prices in script tags; try direct price element
+        price_el = (
+            soup.select_one("[class*='market-price']")
+            or soup.select_one("[class*='MarketPrice']")
+            or soup.select_one(".product-card__market-price")
+        )
+        if price_el:
+            return _parse_price(price_el.get_text(strip=True))
+
+        # Follow first product link found in search results
+        link = soup.select_one("a[href*='/product/']")
+        if link:
+            href = link["href"]
+            product_url = href if href.startswith("http") else f"https://www.tcgplayer.com{href}"
+            resp2 = requests.get(product_url, headers=HEADERS, timeout=15)
+            if resp2.status_code == 200:
+                soup2 = BeautifulSoup(resp2.text, "html.parser")
+                price_el2 = (
+                    soup2.select_one(".spotlight__price")
+                    or soup2.select_one("[class*='market-price']")
+                    or soup2.select_one(".price-point__data")
+                )
+                if price_el2:
+                    return _parse_price(price_el2.get_text(strip=True))
+    except Exception as e:
+        print(f"[tcgplayer] Japan search error for '{set_name}': {e}")
+
+    return None
 
 
 BASE_URL = "https://www.tcgplayer.com/product"
@@ -180,14 +256,20 @@ def get_set_singles_prices(set_slug: str) -> list:
 
 def get_price_for_product_name(product_name: str) -> Optional[float]:
     """
-    Try to find TCGPlayer price for a product, supporting Portuguese Liga Pokémon names.
-    Returns None for JAP/CHN products or unrecognized sets.
+    Try to find TCGPlayer price for a product, supporting Portuguese and Japanese names.
+    Returns None for CHN products or unrecognized sets.
     """
-    normalized = _normalize_name(product_name)
-    if normalized is None:
-        return None  # JAP/CHN — skip
+    normalized, lang = _normalize_name(product_name)
 
-    # Also try the original name lowercased for English products
+    # Chinese products are not on TCGPlayer
+    if lang == "cn":
+        return None
+
+    # Japanese products use the TCGPlayer Japan product line
+    if lang == "jp":
+        return _get_japan_price(product_name)
+
+    # English / PT-BR: match against SEALED_PRODUCT_MAP
     candidates = [normalized]
     if normalized != product_name.lower():
         candidates.append(product_name.lower())
