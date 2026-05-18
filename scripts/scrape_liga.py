@@ -1,7 +1,9 @@
 """
-Playwright scraper for ligapokemon.com.br — runs in GitHub Actions.
+Playwright scraper for ligapokemon.com.br — runs locally on Mac (home IP bypasses Cloudflare).
 Stores results in Upstash Redis so the Vercel API can read them.
 """
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
@@ -9,57 +11,85 @@ import os
 import re
 import sys
 from datetime import datetime
+from pathlib import Path
+from urllib.parse import quote as url_quote
 
 import requests
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
+# Load .env file if present (for local runs)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass
+
 BASE_URL = "https://www.ligapokemon.com.br"
 
-# URL format confirmed from site: ?view=cards/search&card=categ%3D{N}+searchprod%3D1
-# categ=10 → Caixas de Boosters (confirmed)
-# categ=9  → Caixa Treinador Avançado (ETB) — to confirm
-# categ=7  → Latas (tins) — to confirm
-# categ=6  → Blisters — to confirm
-# categ=11 → Box Colecionável — to confirm
 CATEGORY_URLS = {
-    "booster_box": f"{BASE_URL}/?view=cards/search&card=categ%3D10+searchprod%3D1",
-    "etb":         f"{BASE_URL}/?view=cards/search&card=categ%3D9+searchprod%3D1",
-    "tin":         f"{BASE_URL}/?view=cards/search&card=categ%3D7+searchprod%3D1",
-    "blister":     f"{BASE_URL}/?view=cards/search&card=categ%3D6+searchprod%3D1",
-    "collection":  f"{BASE_URL}/?view=cards/search&card=categ%3D11+searchprod%3D1",
+    "booster_box":    f"{BASE_URL}/?view=cards/search&card=categ%3D10+searchprod%3D1",
+    "etb":            f"{BASE_URL}/?view=cards%2Fsearch&card=categ%3D27+searchprod%3D1&tipo=1",
+    "tin":            f"{BASE_URL}/?view=cards%2Fsearch&card=categ%3D24+searchprod%3D1&tipo=1",
+    "blister":        f"{BASE_URL}/?view=cards%2Fsearch&card=categ%3D25+searchprod%3D1&tipo=1",
+    "booster_single": f"{BASE_URL}/?view=cards/search&card=categ%3D21+searchprod%3D1",
 }
 
-KV_URL   = os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ["KV_REST_API_URL"]
-KV_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ["KV_REST_API_TOKEN"]
+KV_URL   = os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ.get("KV_REST_API_URL", "")
+KV_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ.get("KV_REST_API_TOKEN", "")
 KV_KEY   = "liga_products_v1"
 KV_TTL   = 90_000  # 25 hours
 
-_debug_done = False  # print full HTML debug only once
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _page_url(base: str, page_num: int) -> str:
+    if page_num == 1:
+        return base
+    # Insert pagination before any &querystring so we don't break other params
+    if "&" in base:
+        idx = base.index("&")
+        return base[:idx] + f"+pagina%3D{page_num}" + base[idx:]
+    return base + f"+pagina%3D{page_num}"
 
 
-# ── Parsing helpers ──────────────────────────────────────────────────────────
+def _is_challenge(html: str) -> bool:
+    return (
+        "cf-turnstile" in html
+        or "verificação de segurança" in html.lower()
+        or "just a moment" in html.lower()
+        or "enable javascript" in html.lower()
+    )
+
 
 def _parse_price(text: str) -> float | None:
-    # Handle "R$ 650,00" → 650.0
-    cleaned = re.sub(r"[^\d,.]", "", text or "")
-    # Remove thousand separators: "1.650,00" → "1650.00"
-    if "," in cleaned and "." in cleaned:
-        cleaned = cleaned.replace(".", "").replace(",", ".")
-    else:
-        cleaned = cleaned.replace(",", ".")
+    cleaned = re.sub(r"[^\d,.]", "", text or "").replace(",", ".")
     try:
         return float(cleaned) if cleaned else None
     except ValueError:
         return None
 
 
+def _categorize(name: str) -> str:
+    n = name.lower()
+    if any(k in n for k in ["booster box", "display", "caixa de booster"]):
+        return "booster_box"
+    if any(k in n for k in ["elite trainer", "etb", "caixa de treinador"]):
+        return "etb"
+    if "tin" in n or "lata" in n:
+        return "tin"
+    if "blister" in n:
+        return "blister"
+    if any(k in n for k in ["coleção", "collection", "premium", "bundle"]):
+        return "collection"
+    return "sealed"
+
+
 def _extract_set_name(name: str) -> str:
     ignore = {
         "booster", "box", "display", "elite", "trainer", "etb", "tin",
         "blister", "coleção", "collection", "premium", "bundle", "pokemon",
-        "pokémon", "tcg", "pack", "pacote", "caixa", "lata", "kit",
-        "treinador", "avançado", "caixas", "boosters",
+        "pokémon", "tcg", "pack", "pacote", "caixa", "lata", "avulso",
     }
     parts = name.split("-")
     if len(parts) > 1:
@@ -69,135 +99,55 @@ def _extract_set_name(name: str) -> str:
     return " ".join(filtered[:4]) if filtered else name
 
 
-def _categorize_name(name: str) -> str:
-    n = name.lower()
-    if any(k in n for k in ["caixa de booster", "booster box", "display"]):
-        return "booster_box"
-    if any(k in n for k in ["treinador", "elite trainer", "etb"]):
-        return "etb"
-    if "lata" in n or "tin" in n:
-        return "tin"
-    if "blister" in n:
-        return "blister"
-    if any(k in n for k in ["colecionável", "collection", "bundle", "kit"]):
-        return "collection"
-    return "sealed"
-
-
-def _debug_html(html: str, url: str):
-    global _debug_done
-    if _debug_done:
-        return
-    _debug_done = True
+def _parse_page(html: str, category: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
-    print(f"\n[DEBUG] URL: {url}")
-    print(f"[DEBUG] Page title: {soup.title.string if soup.title else 'NO TITLE'}")
-    # Collect all unique class names
-    all_classes = set()
-    for el in soup.find_all(True):
-        for cls in (el.get("class") or []):
-            all_classes.add(cls)
-    # Show classes that look product-related
-    interesting = sorted(c for c in all_classes if any(
-        k in c.lower() for k in ["prod", "card", "item", "price", "preco", "name", "nom"]
-    ))
-    print(f"[DEBUG] Interesting classes: {interesting[:40]}")
-    # Print a snippet of the body HTML
-    body = soup.find("body")
-    body_text = str(body)[:4000] if body else html[:4000]
-    print(f"[DEBUG] Body HTML (first 4000 chars):\n{body_text}\n[/DEBUG]\n")
-
-
-def _parse_page(html: str, category: str, page_url: str) -> list[dict]:
-    soup = BeautifulSoup(html, "html.parser")
-
-    # Debug on first empty page to see real selectors
-    if not soup.select("a"):
-        _debug_html(html, page_url)
-
     products = []
     now = datetime.utcnow().isoformat()
 
-    # Try multiple selector strategies — broaden on each attempt
     cards = (
         soup.select(".card-produto")
         or soup.select(".produto-item")
-        or soup.select(".product-item")
-        or soup.select("li.item")
+        or soup.select("[class*='product-item']")
         or soup.select("[class*='produto']")
-        or soup.select("[class*='product']")
-        or soup.select(".card:has(img):has(a)")
+        or soup.select(".item")
     )
 
-    # Fallback: any element containing a price-looking text
     if not cards:
-        # Collect all divs/articles that contain "R$"
-        candidates = []
-        for el in soup.find_all(["div", "article", "li"]):
-            if "R$" in el.get_text():
-                # Only take leaf-ish containers (not the whole page body)
-                children_with_price = [c for c in el.find_all(["div", "article", "li"]) if "R$" in c.get_text()]
-                if not children_with_price:
-                    candidates.append(el)
-        if candidates:
-            print(f"  [parse] fallback: found {len(candidates)} R$-containing elements")
-            _debug_html(html, page_url)
-            cards = candidates[:50]
-
-    if not cards:
-        _debug_html(html, page_url)
+        # Debug: dump first 2000 chars so we can see what class names the site uses
+        print(f"  [debug] no cards found. page snippet:\n{html[:2000]}\n---")
 
     for card in cards:
         try:
             name_el = (
                 card.select_one(".nome-produto")
                 or card.select_one(".product-name")
-                or card.select_one(".titulo")
-                or card.select_one("[class*='nome']")
-                or card.select_one("[class*='title']")
                 or card.select_one("h2")
                 or card.select_one("h3")
-                or card.select_one("h4")
                 or card.select_one("a[title]")
-                or card.select_one("a")
             )
-            # Price: skip "À partir de" text, look for the number
             price_el = (
-                card.select_one(".preco-por")
-                or card.select_one(".price-box .price")
+                card.select_one(".preco")
+                or card.select_one(".price")
                 or card.select_one("[class*='preco']")
                 or card.select_one("[class*='price']")
             )
-            # If still no price el, search for text matching "R$"
-            if not price_el:
-                for el in card.find_all(True):
-                    t = el.get_text(strip=True)
-                    if re.search(r"R\$\s*[\d.,]+", t) and not el.find_all(True):
-                        price_el = el
-                        break
-
             link_el = card.select_one("a[href]")
             img_el  = card.select_one("img")
 
-            if not name_el:
+            if not name_el or not price_el:
                 continue
 
-            name = name_el.get_text(strip=True) or name_el.get("title", "")
-            if not name:
-                continue
+            name  = name_el.get_text(strip=True) or name_el.get("title", "")
+            price = _parse_price(price_el.get_text(strip=True))
 
-            price_text = price_el.get_text(strip=True) if price_el else ""
-            price = _parse_price(price_text)
-            if not price:
+            if not name or not price:
                 continue
 
             href = (link_el.get("href", "") if link_el else "")
-            url  = href if href.startswith("http") else f"{BASE_URL}/{href.lstrip('/')}"
-            img  = ""
-            if img_el:
-                img = img_el.get("src") or img_el.get("data-src") or img_el.get("data-lazy-src") or ""
+            url  = href if href.startswith("http") else f"{BASE_URL}{href}"
+            img  = (img_el.get("src") or img_el.get("data-src") or "") if img_el else ""
 
-            stock_el = card.select_one(".estoque") or card.select_one("[class*='stock']") or card.select_one("[class*='estoque']")
+            stock_el = card.select_one(".estoque") or card.select_one("[class*='stock']")
             in_stock = True
             if stock_el:
                 in_stock = "esgotado" not in stock_el.get_text(strip=True).lower()
@@ -227,10 +177,13 @@ async def scrape() -> list[dict]:
     all_products: dict[str, dict] = {}
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
+        browser = await pw.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
+        )
         context = await browser.new_context(
             user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
@@ -240,21 +193,19 @@ async def scrape() -> list[dict]:
         page = await context.new_page()
 
         for category, base_url in CATEGORY_URLS.items():
-            print(f"\n[{category}] {base_url}")
+            print(f"\n[{category}]")
             for page_num in range(1, 11):
-                # Pagination: append pagina=N to the card param
-                if page_num == 1:
-                    url = base_url
-                else:
-                    # Try: base_url + "+pagina%3D{N}"
-                    url = base_url + f"+pagina%3D{page_num}"
-
+                url = _page_url(base_url, page_num)
                 try:
-                    resp = await page.goto(url, wait_until="networkidle", timeout=45_000)
-                    await page.wait_for_timeout(2500)  # let JS finish rendering
-
+                    await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                    await page.wait_for_timeout(3000)
                     html = await page.content()
-                    items = _parse_page(html, category, url)
+
+                    if _is_challenge(html):
+                        print(f"  page {page_num}: Cloudflare challenge detected — cannot proceed")
+                        break
+
+                    items = _parse_page(html, category)
 
                     if not items:
                         print(f"  page {page_num}: 0 items — stopping category")
@@ -281,6 +232,9 @@ async def scrape() -> list[dict]:
 # ── KV store ─────────────────────────────────────────────────────────────────
 
 def save_to_kv(products: list[dict], scraped_at: str) -> bool:
+    if not KV_URL or not KV_TOKEN:
+        print("ERROR: KV_REST_API_URL / KV_REST_API_TOKEN not set")
+        return False
     payload = json.dumps({"products": products, "scraped_at": scraped_at}, ensure_ascii=False)
     r = requests.post(
         f"{KV_URL}/pipeline",
@@ -288,8 +242,6 @@ def save_to_kv(products: list[dict], scraped_at: str) -> bool:
         headers={"Authorization": f"Bearer {KV_TOKEN}", "Content-Type": "application/json"},
         timeout=15,
     )
-    if r.status_code != 200:
-        print(f"  KV error: {r.status_code} {r.text[:200]}")
     return r.status_code == 200
 
 
