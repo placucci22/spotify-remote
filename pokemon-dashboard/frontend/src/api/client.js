@@ -29,4 +29,7 @@ export const getDashboard = () => api.get("/dashboard").then((r) => r.data);
 export const getProductTrend = (name) =>
   api.get(`/trends/${encodeURIComponent(name)}`).then((r) => r.data);
 
+export const getCardsPokeprice = (params = {}) =>
+  api.get("/cards/pokeprice", { params }).then((r) => r.data);
+
 export default api;

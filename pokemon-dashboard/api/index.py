@@ -22,6 +22,13 @@ from scrapers.price_charting import get_sealed_price_and_trend
 from services.exchange_rate import get_usd_brl, usd_to_brl_direct
 from services.ev_calculator import calculate_ev, STATIC_EV_DATA
 from services.kv_store import kv_get_products, kv_set_products, kv_get_cards
+from services.pokeprice import (
+    get_sealed_price as pokeprice_sealed,
+    get_card_price as pokeprice_card,
+    get_top_cards_for_set as pokeprice_set_top,
+    get_sets as pokeprice_sets,
+    normalize_product_name as pokeprice_normalize,
+)
 
 # ──────────────────────────────────────────────
 # App + Security middleware
@@ -233,7 +240,7 @@ def product_analysis(product_id: str):
 
 @app.get("/api/compare")
 def compare_products(
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=50),
     category: Optional[str] = Query(None, max_length=32),
 ):
     _ensure_kv_loaded()
@@ -243,25 +250,35 @@ def compare_products(
     if category:
         products = [p for p in products if p.get("category") == category]
 
+    # Exclude accessories and non-booster items
+    products = [p for p in products if _is_booster_product(p)]
+
     results = []
     for product in products[:limit]:
         name = product["name"]
+        _, lang = pokeprice_normalize(name)
+        if lang in ("jp", "cn"):
+            continue
         price_brl = product["price_brl"]
-        tcgplayer_usd = get_price_for_product_name(name)
-        tcg_brl = usd_to_brl_direct(tcgplayer_usd, rate) if tcgplayer_usd else None
+
+        # Try pokeprice first (better PT→EN mapping), fall back to tcgplayer
+        usd_price = pokeprice_sealed(name) or get_price_for_product_name(name)
+        price_source = "pokeprice" if pokeprice_sealed(name) else ("tcgplayer" if usd_price else None)
+        usd_brl = usd_to_brl_direct(usd_price, rate) if usd_price else None
         savings_pct = None
-        if tcg_brl:
-            savings_pct = round(((tcg_brl - price_brl) / tcg_brl) * 100, 1)
+        if usd_brl:
+            savings_pct = round(((usd_brl - price_brl) / usd_brl) * 100, 1)
 
         results.append({
             "id": product["id"],
             "name": name,
             "price_brl": price_brl,
-            "tcgplayer_usd": tcgplayer_usd,
-            "tcgplayer_brl": tcg_brl,
+            "usa_price_usd": usd_price,
+            "usa_price_brl": usd_brl,
             "savings_pct": savings_pct,
             "is_good_deal": (savings_pct or 0) > 5,
             "recommendation": _price_label(savings_pct),
+            "source": price_source,
         })
 
     results.sort(key=lambda x: x.get("savings_pct") or -999, reverse=True)
@@ -395,6 +412,52 @@ def get_cards(
         "available_sets": sets,
         "available_rarities": rarities,
     }
+
+
+@app.get("/api/cards/pokeprice")
+def cards_pokeprice(
+    set_name: Optional[str] = Query(None, max_length=120),
+    search: Optional[str] = Query(None, max_length=120),
+    language: str = Query("english", max_length=20),
+    limit: int = Query(20, ge=1, le=50),
+    sort_by: str = Query("price", max_length=20),
+):
+    """
+    Live card prices from PokemonPriceTracker.
+    Costs credits — results are cached in-memory per container lifetime.
+    Use sparingly: free tier = 100 credits/day.
+    """
+    set_name = _sanitize(set_name)
+    search = _sanitize(search)
+    if not set_name and not search:
+        raise HTTPException(status_code=400, detail="Forneça 'set_name' ou 'search'")
+
+    from services.pokeprice import _get, _extract_price
+    params: dict = {"language": language, "limit": limit, "sortBy": sort_by, "sortOrder": "desc"}
+    if set_name:
+        params["set"] = set_name
+    if search:
+        params["search"] = search
+
+    data = _get("cards", params)
+    if not data:
+        return {"cards": [], "source": "pokeprice", "error": "API indisponível ou sem créditos"}
+
+    raw = data if isinstance(data, list) else data.get("cards", data.get("data", []))
+    rate = get_usd_brl()
+    cards = []
+    for c in raw:
+        usd = _extract_price(c)
+        cards.append({
+            "name": c.get("name", ""),
+            "set": c.get("set", set_name or ""),
+            "number": c.get("number", ""),
+            "rarity": c.get("rarity", ""),
+            "language": language,
+            "price_usd": usd,
+            "price_brl": round(usd * rate, 2) if usd else None,
+        })
+    return {"cards": cards, "total": len(cards), "exchange_rate": rate, "source": "pokeprice"}
 
 
 @app.get("/api/trends/{product_name}")
