@@ -1,6 +1,5 @@
 """
 Vercel serverless entry point — security-hardened FastAPI app.
-Imports scraper/service logic from the backend/ package.
 """
 import sys
 import os
@@ -9,8 +8,8 @@ import signal
 from datetime import datetime
 from typing import Optional
 
-# Make backend/ importable from this serverless function
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend"))
+# Add api/ directory to path so scrapers/ and services/ are importable
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
