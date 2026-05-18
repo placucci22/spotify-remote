@@ -354,7 +354,14 @@ def cron_scrape(request: Request):
     try:
         products = scrape_all_categories(max_pages=6, max_workers=8, request_timeout=8)
         if not products:
-            return {"ok": False, "message": "Scraping retornou 0 produtos"}
+            # Try a quick single-page test to get a diagnostic status code
+            try:
+                import cloudscraper as _cs
+                _s = _cs.create_scraper()
+                _r = _s.get("https://www.ligapokemon.com.br/?view=cards/list&CategoriasId=2&pagina=1", timeout=10)
+                return {"ok": False, "message": "Scraping retornou 0 produtos", "http_status": _r.status_code, "html_snippet": _r.text[:300]}
+            except Exception as probe_err:
+                return {"ok": False, "message": "Scraping retornou 0 produtos", "probe_error": str(probe_err)}
 
         scraped_at = datetime.now().isoformat()
         saved = kv_set_products(products, scraped_at)
