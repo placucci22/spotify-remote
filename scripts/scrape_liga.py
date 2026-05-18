@@ -30,17 +30,27 @@ KV_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ["KV_REST_API
 KV_KEY   = "liga_products_v1"
 KV_TTL   = 90_000  # 25 hours
 
-_debug_done = False  # print full HTML debug only once
+_debug_done = False
+
+# Chromium flags for Docker containers with limited RAM (512MB)
+CHROMIUM_ARGS = [
+    "--no-sandbox",
+    "--disable-dev-shm-usage",   # use /tmp instead of /dev/shm (64MB in Docker)
+    "--disable-gpu",
+    "--no-zygote",
+    "--single-process",          # single process = lower memory
+    "--disable-extensions",
+    "--disable-background-networking",
+    "--disable-default-apps",
+    "--mute-audio",
+]
 
 
-# ── URL helpers ────────────────────────────────────────────────
+# ── URL helpers ─────────────────────────────────────────────
 
 def _page_url(base: str, page_num: int) -> str:
-    """Insert pagina=N into the card= query param (before any trailing &)."""
     if page_num == 1:
         return base
-    # card=categ%3D10+searchprod%3D1  ->  card=categ%3D10+searchprod%3D1+pagina%3DN
-    # Must insert before any &tipo=1 or other trailing params
     if "&" in base:
         idx = base.index("&")
         return base[:idx] + f"+pagina%3D{page_num}" + base[idx:]
@@ -50,7 +60,6 @@ def _page_url(base: str, page_num: int) -> str:
 # ── Parsing helpers ─────────────────────────────────────────────
 
 def _parse_price(text: str) -> float | None:
-    # Handle "R$ 650,00" → 650.0 and "1.650,00" → 1650.0
     cleaned = re.sub(r"[^\d,.]", "", text or "")
     if "," in cleaned and "." in cleaned:
         cleaned = cleaned.replace(".", "").replace(",", ".")
@@ -103,7 +112,6 @@ def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
     products = []
     now = datetime.utcnow().isoformat()
 
-    # Try known selectors first, then broaden
     cards = (
         soup.select(".card-produto")
         or soup.select(".produto-item")
@@ -115,7 +123,6 @@ def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
         or soup.select(".search-item")
     )
 
-    # Fallback: any leaf container that holds a R$ price
     if not cards:
         candidates = []
         for el in soup.find_all(["div", "article", "li"]):
@@ -154,7 +161,6 @@ def _parse_page(html: str, category: str, page_url: str = "") -> list[dict]:
                 or card.select_one("[class*='preco']")
                 or card.select_one("[class*='price']")
             )
-            # Last resort: innermost element containing "R$"
             if not price_el:
                 for el in card.find_all(True):
                     t = el.get_text(strip=True)
@@ -222,7 +228,10 @@ async def scrape() -> list[dict]:
     all_products: dict[str, dict] = {}
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
+        browser = await pw.chromium.launch(
+            headless=True,
+            args=CHROMIUM_ARGS,
+        )
         context = await browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -230,17 +239,17 @@ async def scrape() -> list[dict]:
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
             locale="pt-BR",
-            viewport={"width": 1280, "height": 800},
+            viewport={"width": 1024, "height": 768},
         )
         page = await context.new_page()
 
         for category, base_url in CATEGORY_URLS.items():
-            print(f"\n[{category}] {base_url}")
+            print(f"\n[{category}]")
             for page_num in range(1, 11):
                 url = _page_url(base_url, page_num)
                 try:
                     await page.goto(url, wait_until="networkidle", timeout=45_000)
-                    await page.wait_for_timeout(2500)
+                    await page.wait_for_timeout(2000)
 
                     html = await page.content()
                     items = _parse_page(html, category, url)
@@ -256,12 +265,13 @@ async def scrape() -> list[dict]:
                             new += 1
 
                     print(f"  page {page_num}: {len(items)} items ({new} new)")
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(0.5)
 
                 except Exception as e:
                     print(f"  page {page_num}: error — {e}")
                     break
 
+        await context.close()
         await browser.close()
 
     return list(all_products.values())
