@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-pokemon-dark text-gray-100 font-sans;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-pokemon-card border border-pokemon-border rounded-xl p-4;
+  }
+
+  .badge-buy-strong {
+    @apply bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full;
+  }
+  .badge-buy {
+    @apply bg-emerald-600 text-white text-xs font-bold px-2 py-1 rounded-full;
+  }
+  .badge-neutral {
+    @apply bg-yellow-600 text-white text-xs font-bold px-2 py-1 rounded-full;
+  }
+  .badge-wait {
+    @apply bg-orange-600 text-white text-xs font-bold px-2 py-1 rounded-full;
+  }
+  .badge-avoid {
+    @apply bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full;
+  }
+  .badge-open {
+    @apply bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded-full;
+  }
+  .badge-hold {
+    @apply bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full;
+  }
+
+  .btn-primary {
+    @apply bg-pokemon-red hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors;
+  }
+  .btn-secondary {
+    @apply bg-pokemon-border hover:bg-blue-800 text-gray-100 font-semibold px-4 py-2 rounded-lg transition-colors;
+  }
+
+  .stat-card {
+    @apply card flex flex-col gap-1;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+::-webkit-scrollbar-thumb {
+  background: #0f3460;
+  border-radius: 3px;
+}
