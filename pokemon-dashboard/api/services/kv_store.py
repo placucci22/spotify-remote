@@ -9,8 +9,10 @@ import json
 import requests
 from typing import Optional
 
-_KV_URL = os.getenv("KV_REST_API_URL", "")
-_KV_TOKEN = os.getenv("KV_REST_API_TOKEN", "")
+# Upstash via Vercel Marketplace injects UPSTASH_REDIS_REST_URL / TOKEN
+# Legacy Vercel KV used KV_REST_API_URL / TOKEN — support both
+_KV_URL = os.getenv("UPSTASH_REDIS_REST_URL") or os.getenv("KV_REST_API_URL", "")
+_KV_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN") or os.getenv("KV_REST_API_TOKEN", "")
 
 PRODUCTS_KEY = "liga_products_v1"
 PRODUCTS_TTL = 90_000  # 25 hours in seconds
