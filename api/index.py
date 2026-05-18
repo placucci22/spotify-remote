@@ -16,8 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from mangum import Mangum
 
-from scrapers.liga_pokemon import scrape_products, scrape_all_categories
-from scrapers.mercadolivre import fetch_ml_products
+from scrapers.liga_pokemon import scrape_products
 from scrapers.tcgplayer import get_price_for_product_name
 from scrapers.price_charting import get_sealed_price_and_trend
 from services.exchange_rate import get_usd_brl, usd_to_brl_direct
@@ -353,10 +352,11 @@ def cron_scrape(request: Request):
     global _products_cache, _last_scrape, _kv_loaded
 
     try:
-        # Primary source: Mercado Livre public API (no bot protection)
-        products = fetch_ml_products(limit_per_query=50)
+        # Scraping is done by GitHub Actions (Playwright) and stored in KV.
+        # This endpoint is kept for manual on-demand refresh (lightweight).
+        products = scrape_products(max_pages=2)
         if not products:
-            return {"ok": False, "message": "Mercado Livre API retornou 0 produtos"}
+            return {"ok": False, "message": "Scraping retornou 0 produtos — use o GitHub Actions workflow para scrape completo"}
 
         scraped_at = datetime.now().isoformat()
         saved = kv_set_products(products, scraped_at)
