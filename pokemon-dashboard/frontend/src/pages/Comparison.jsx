@@ -1,0 +1,195 @@
+import { useEffect, useState } from "react";
+import { getComparisons, getExchangeRate } from "../api/client";
+import { ArrowLeftRight, Loader, DollarSign, Info } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
+
+const CATEGORY_OPTIONS = [
+  { value: "", label: "Todos" },
+  { value: "booster_box", label: "Booster Box" },
+  { value: "etb", label: "ETB" },
+  { value: "tin", label: "Tin" },
+];
+
+export default function Comparison() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState("");
+  const [rate, setRate] = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      getComparisons({ category, limit: 30 }),
+      getExchangeRate(),
+    ]).then(([cmp, exr]) => {
+      setData(cmp);
+      setRate(exr.usd_brl);
+    }).finally(() => setLoading(false));
+  }, [category]);
+
+  const comparisons = data?.comparisons || [];
+  const chartData = comparisons
+    .filter((c) => c.savings_pct != null)
+    .slice(0, 12)
+    .map((c) => ({
+      name: c.name.split(" ").slice(1, 4).join(" "),
+      savings: c.savings_pct,
+    }));
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-white">Brasil vs EUA</h1>
+        <p className="text-gray-400 text-sm">
+          Comparação de preços com TCGPlayer (incluindo imposto de importação ~60%)
+        </p>
+      </div>
+
+      {/* Exchange rate banner */}
+      {rate && (
+        <div className="card flex items-center gap-4 bg-green-950/30 border-green-800">
+          <DollarSign size={20} className="text-green-400" />
+          <div>
+            <p className="text-sm font-semibold text-green-300">
+              Câmbio atual: R$ {rate?.toFixed(2)} / USD
+            </p>
+            <p className="text-xs text-gray-400">
+              Com 60% de imposto: custo real de importação = preço USD × {rate?.toFixed(2)} × 1.60
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="card bg-blue-950/40 border-blue-800 flex gap-3 text-sm">
+        <Info size={16} className="text-blue-400 flex-shrink-0 mt-0.5" />
+        <p className="text-gray-300">
+          <span className="text-blue-300 font-semibold">Metodologia:</span>{" "}
+          "Mais barato no BR" significa que o preço no Liga Pokémon é menor que o custo real de
+          importar (preço TCGPlayer × câmbio × 1.60 de imposto). Economia positiva = boa compra no Brasil.
+        </p>
+      </div>
+
+      {/* Category filter */}
+      <div className="flex gap-2">
+        {CATEGORY_OPTIONS.map((c) => (
+          <button
+            key={c.value}
+            onClick={() => setCategory(c.value)}
+            className={category === c.value ? "btn-primary text-sm" : "btn-secondary text-sm"}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-gray-400">
+          <Loader className="animate-spin mr-2" size={18} /> Buscando preços...
+        </div>
+      ) : (
+        <>
+          {/* Chart */}
+          {chartData.length > 0 && (
+            <div className="card">
+              <h2 className="text-sm font-semibold text-gray-300 mb-4">
+                Economia vs importar (%) — positivo = mais barato no BR
+              </h2>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={chartData} margin={{ top: 0, right: 0, bottom: 35, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#0f3460" />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: "#9ca3af", fontSize: 9 }}
+                    tickLine={false}
+                    angle={-35}
+                    textAnchor="end"
+                  />
+                  <YAxis
+                    tick={{ fill: "#9ca3af", fontSize: 10 }}
+                    tickLine={false}
+                    tickFormatter={(v) => `${v}%`}
+                  />
+                  <Tooltip
+                    formatter={(v) => [`${v?.toFixed(1)}%`, "Economia"]}
+                    contentStyle={{ background: "#16213e", border: "1px solid #0f3460", borderRadius: 8, fontSize: 12 }}
+                  />
+                  <Bar dataKey="savings" radius={[4, 4, 0, 0]}>
+                    {chartData.map((entry, i) => (
+                      <Cell key={i} fill={entry.savings >= 5 ? "#22c55e" : entry.savings >= -5 ? "#eab308" : "#ef4444"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Table */}
+          <div className="card p-0 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="border-b border-pokemon-border">
+                <tr className="text-gray-400 text-xs">
+                  <th className="text-left px-4 py-3">Produto</th>
+                  <th className="text-right px-4 py-3">Liga BR</th>
+                  <th className="text-right px-4 py-3">TCGPlayer USD</th>
+                  <th className="text-right px-4 py-3">Custo importar</th>
+                  <th className="text-right px-4 py-3">Economia</th>
+                  <th className="text-center px-4 py-3">Avaliação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisons.map((c) => (
+                  <tr key={c.id} className="border-b border-pokemon-border/40 hover:bg-pokemon-border/20">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-white max-w-[220px] truncate">{c.name}</p>
+                    </td>
+                    <td className="px-4 py-3 text-right text-pokemon-yellow font-bold">
+                      R$ {c.price_brl?.toFixed(0)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-300">
+                      {c.tcgplayer_usd ? `$ ${c.tcgplayer_usd?.toFixed(0)}` : (
+                        <span className="text-gray-500 text-xs">sem dados</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-400 text-xs">
+                      {c.import_cost_brl ? `R$ ${c.import_cost_brl?.toFixed(0)}` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {c.savings_pct != null ? (
+                        <span className={
+                          c.savings_pct > 5 ? "text-green-400 font-bold" :
+                          c.savings_pct > -5 ? "text-yellow-400" : "text-red-400"
+                        }>
+                          {c.savings_pct > 0 ? "+" : ""}{c.savings_pct?.toFixed(1)}%
+                        </span>
+                      ) : <span className="text-gray-600">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                        c.recommendation === "ÓTIMO NEGÓCIO" ? "bg-green-600 text-white" :
+                        c.recommendation === "BOM NEGÓCIO" ? "bg-emerald-700 text-white" :
+                        c.recommendation === "PREÇO JUSTO" ? "bg-yellow-700 text-white" :
+                        c.recommendation === "LIGEIRAMENTE CARO" ? "bg-orange-700 text-white" :
+                        "bg-red-700 text-white"
+                      }`}>
+                        {c.recommendation}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
