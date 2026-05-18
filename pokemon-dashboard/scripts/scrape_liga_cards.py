@@ -33,6 +33,13 @@ import requests
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
+# Load .env from the same directory as this script (or cwd)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 BASE_URL = "https://www.ligapokemon.com.br"
 CARD_SEARCH_URL = BASE_URL + "/?view=cards/search&card=ed={abbrev}"
 EDITION_LIST_URL = BASE_URL + "/?view=cards/editions"
