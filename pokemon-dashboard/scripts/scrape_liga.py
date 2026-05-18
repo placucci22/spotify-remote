@@ -43,6 +43,9 @@ def _parse_price(text: str) -> float | None:
 
 def _categorize(name: str) -> str:
     n = name.lower()
+    # Non-booster accessories — must check before generic "caixa" matches
+    if any(k in n for k in ["caixa vazia", "pasta", "sleeve", "protetor", "dado", "play mat", "tapete", "deck box"]):
+        return "accessory"
     if any(k in n for k in ["booster box", "display", "caixa de booster"]):
         return "booster_box"
     if any(k in n for k in ["elite trainer", "etb"]):

@@ -84,9 +84,9 @@ export default function Dashboard() {
           color="text-pokemon-yellow"
         />
         <StatCard
-          title="Bons negócios"
-          value={data?.best_deals?.length ?? 0}
-          sub="mais baratos que importar"
+          title="Análises EV"
+          value={data?.best_ev_boxes?.length ?? 0}
+          sub="caixas analisadas"
           icon={Star}
           color="text-pokemon-yellow"
         />
@@ -100,72 +100,6 @@ export default function Dashboard() {
           color="text-blue-400"
         />
       </div>
-
-      {/* Best Deals */}
-      {data?.best_deals?.length > 0 && (
-        <section>
-          <h2 className="text-base md:text-lg font-semibold text-white mb-3 flex items-center gap-2">
-            <Star size={16} className="text-green-400" />
-            Melhores negócios vs EUA
-          </h2>
-
-          {/* Mobile cards */}
-          <div className="md:hidden space-y-3">
-            {data.best_deals.map((p) => (
-              <div key={p.id} className="card flex justify-between items-center gap-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-semibold truncate">{p.name}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Liga: <span className="text-pokemon-yellow font-bold">R$ {p.price_brl?.toFixed(0)}</span>
-                    {p.tcgplayer_usd && <> · TCG: ${p.tcgplayer_usd?.toFixed(0)}</>}
-                  </p>
-                </div>
-                {p.savings_pct != null && (
-                  <span className={`text-sm font-bold flex-shrink-0 ${p.savings_pct > 0 ? "text-green-400" : "text-red-400"}`}>
-                    {p.savings_pct > 0 ? "+" : ""}{p.savings_pct?.toFixed(1)}%
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-gray-400 text-xs border-b border-pokemon-border">
-                  <th className="text-left pb-2 pr-4">Produto</th>
-                  <th className="text-right pb-2 pr-4">Liga BR</th>
-                  <th className="text-right pb-2 pr-4">TCGPlayer USD</th>
-                  <th className="text-right pb-2 pr-4">TCGPlayer em BRL</th>
-                  <th className="text-right pb-2">Diferença</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.best_deals.map((p) => (
-                  <tr key={p.id} className="border-b border-pokemon-border/50 hover:bg-pokemon-card/50">
-                    <td className="py-2 pr-4 font-medium text-white max-w-xs truncate">{p.name}</td>
-                    <td className="py-2 pr-4 text-right text-pokemon-yellow font-bold">R$ {p.price_brl?.toFixed(0)}</td>
-                    <td className="py-2 pr-4 text-right text-gray-300">
-                      {p.tcgplayer_usd ? `$ ${p.tcgplayer_usd?.toFixed(0)}` : "—"}
-                    </td>
-                    <td className="py-2 pr-4 text-right text-gray-400">
-                      {p.tcgplayer_brl ? `R$ ${p.tcgplayer_brl?.toFixed(0)}` : "—"}
-                    </td>
-                    <td className="py-2 text-right">
-                      {p.savings_pct != null ? (
-                        <span className={p.savings_pct > 0 ? "text-green-400 font-bold" : "text-red-400"}>
-                          {p.savings_pct > 0 ? "+" : ""}{p.savings_pct?.toFixed(1)}%
-                        </span>
-                      ) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
 
       {/* Best EV Boxes */}
       {data?.best_ev_boxes?.length > 0 && (

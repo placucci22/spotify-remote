@@ -61,7 +61,21 @@ async def generic_error_handler(request: Request, exc: Exception):
 # Input validation helpers
 # ──────────────────────────────────────────────
 
-ALLOWED_CATEGORIES = {"booster_box", "etb", "tin", "blister", "collection", "sealed", ""}
+ALLOWED_CATEGORIES = {"booster_box", "etb", "tin", "blister", "collection", "sealed", "accessory", ""}
+
+# Keywords that identify non-booster products (accessories, empty boxes, etc.)
+_NON_BOOSTER_KEYWORDS = frozenset([
+    "caixa vazia", "pasta", "sleeve", "protetor", "dado", "play mat",
+    "tapete", "deck box", "acessório", "storage",
+])
+
+
+def _is_booster_product(product: dict) -> bool:
+    """Return False for accessories and non-booster items that would skew EV."""
+    if product.get("category") == "accessory":
+        return False
+    name_lower = product.get("name", "").lower()
+    return not any(kw in name_lower for kw in _NON_BOOSTER_KEYWORDS)
 
 _HTML_RE = re.compile(r"<[^>]+>")
 _UNSAFE_RE = re.compile(r"[;<>`$\\]")
@@ -266,7 +280,10 @@ def ev_analysis(
         products = [p for p in products if p.get("category") == category]
 
     sealed_categories = {"booster_box", "etb", "sealed", "blister"}
-    sealed = [p for p in products if p.get("category") in sealed_categories]
+    sealed = [
+        p for p in products
+        if p.get("category") in sealed_categories and _is_booster_product(p)
+    ]
 
     results = []
     for product in sealed[:limit]:
@@ -301,20 +318,14 @@ def dashboard():
     _ensure_kv_loaded()
     rate = get_usd_brl()
     products = _products_cache
-    sealed = [p for p in products if p.get("category") in {"booster_box", "etb", "sealed"}]
-
-    best_deals = []
-    for p in sealed[:15]:
-        tcg_usd = get_price_for_product_name(p["name"])
-        if tcg_usd:
-            tcg_brl = usd_to_brl_direct(tcg_usd, rate)
-            savings = ((tcg_brl - p["price_brl"]) / tcg_brl) * 100
-            best_deals.append({**p, "savings_pct": round(savings, 1), "tcgplayer_usd": tcg_usd, "tcgplayer_brl": round(tcg_brl, 2)})
-
-    best_deals.sort(key=lambda x: x.get("savings_pct", -999), reverse=True)
+    sealed_categories = {"booster_box", "etb", "sealed"}
+    sealed = [
+        p for p in products
+        if p.get("category") in sealed_categories and _is_booster_product(p)
+    ]
 
     ev_list = []
-    for p in sealed[:15]:
+    for p in sealed:
         ev = calculate_ev(p["name"], p["price_brl"])
         ev_list.append({**p, **ev})
     ev_list.sort(key=lambda x: x.get("expected_profit_loss_pct", -999), reverse=True)
@@ -323,8 +334,7 @@ def dashboard():
         "exchange_rate": rate,
         "total_products": len(products),
         "total_sealed": len(sealed),
-        "best_deals": best_deals[:5],
-        "best_ev_boxes": ev_list[:5],
+        "best_ev_boxes": ev_list[:12],
         "last_updated": _last_scrape or datetime.now().isoformat(),
     }
 
